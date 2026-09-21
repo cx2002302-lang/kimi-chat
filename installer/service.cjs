@@ -5,17 +5,18 @@
  * 职责：
  *   1. 话题 CRUD：JSON 文件存于 ~/.kimi-code/kimi-chat/topics/<id>.json
  *      （纯文本文件，方便备份/管理，也能直接在会话里让 agent Read 讨论）
- *   2. MiniMax 聊天代理：POST /api/topics/:id/chat  SSE 流式回推；
- *      API key 只存服务端 ~/.kimi-code/kimi-chat/config.json，不下发到浏览器
- *   3. 图像生成代理：POST /api/image → MiniMax image-01 → 下载到本地 images/ →
- *      返回 /images/<file> 本地地址（原始签名 URL 24 小时后过期，必须落盘）
+ *   2. 聊天代理：POST /api/topics/:id/chat  SSE 流式回推；
+ *      后端跟随 Kimi Code CLI 模型注册表（与会话同源），凭证只存服务端
+ *   3. 生成 provider（与聊天无关的可选能力，端点格式兼容 MiniMax API）：
+ *      POST /api/image → 生图 → 下载落盘 images/ → 返回 /images/<file>
+ *      POST /api/tts   → 语音 → 落盘 audio/ → 返回 /audio/<file>
  *   4. Markdown 导出：GET /api/topics/:id/export
  *
  * 生命周期：由 watch.cjs 的看门狗进程内启动（同进程常驻），也可独立调试：
  *   node service.cjs [port]     # 前台运行
  *
- * 安全：只监听 127.0.0.1；CORS 放行所有来源（本机工具，页面源是 kimi web 的
- * localhost 端口）；请求体限 1MB；/images 防路径穿越。
+ * 安全：~/.kimi-code/server.token 存在时所有 /api/* 要求 Bearer 认证并绑 0.0.0.0，
+ * 否则只监听 127.0.0.1；请求体限 1MB；/images 与 /audio 防路径穿越。
  */
 const http = require('node:http')
 const fs = require('node:fs')
@@ -23,11 +24,12 @@ const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.4.2'
+const VERSION = '0.5.0'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
 const IMAGES_DIR = path.join(STATE_DIR, 'images')
+const AUDIO_DIR = path.join(STATE_DIR, 'audio')
 const CONFIG_FILE = path.join(STATE_DIR, 'config.json')
 const CLI_CONFIG_FILE = path.join(HOME, 'config.toml')
 const CLI_TOKEN_FILE = path.join(HOME, 'server.token')
@@ -39,10 +41,20 @@ const MAX_REPLY_TOKENS = 4096
 
 // ---------- 配置 ----------
 const DEFAULT_CONFIG = {
-  // ---- 生图（MiniMax，仅用于图标/图片/背景等图像资产生成） ----
-  minimax_api_key: '',
-  minimax_base_url: 'https://api.minimaxi.com',
-  image_model: 'image-01',
+  // ---- 生成 provider（通用配置：生图 + 语音，端点格式兼容 MiniMax API；与聊天无关） ----
+  image: {
+    base_url: 'https://api.minimaxi.com', // 兼容 MiniMax 图像端点的任意服务
+    api_key: '',
+    model: 'image-01',
+    path: '/v1/image_generation'
+  },
+  tts: {
+    base_url: 'https://api.minimaxi.com', // 兼容 MiniMax t2a_v2 端点的任意服务
+    api_key: '',
+    model: 'speech-02-hd',
+    voice: 'male-qn-qingse',
+    path: '/v1/t2a_v2'
+  },
   port: DEFAULT_PORT,
   // ---- 聊天后端：默认跟随 Kimi Code CLI 的 default_model（与会话同源） ----
   // 如需指定别的 OpenAI 兼容端点，填 chat_base_url（+ chat_api_key/chat_model）即可覆盖
@@ -64,7 +76,18 @@ function loadConfig() {
     const st = fs.statSync(CONFIG_FILE)
     if (cfgCache.data && cfgCache.at === st.mtimeMs) return cfgCache.data
     const j = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'))
+    // 兼容旧版扁平 minimax_* 配置 → 映射进通用 image provider
+    if (!j.image && (j.minimax_api_key || j.minimax_base_url || j.image_model)) {
+      j.image = {
+        base_url: j.minimax_base_url || DEFAULT_CONFIG.image.base_url,
+        api_key: j.minimax_api_key || '',
+        model: j.image_model || DEFAULT_CONFIG.image.model,
+        path: DEFAULT_CONFIG.image.path
+      }
+    }
     const data = Object.assign({}, DEFAULT_CONFIG, j)
+    data.image = Object.assign({}, DEFAULT_CONFIG.image, j.image)
+    data.tts = Object.assign({}, DEFAULT_CONFIG.tts, j.tts)
     cfgCache = { at: st.mtimeMs, data }
     return data
   } catch {
@@ -213,6 +236,7 @@ function checkAuth(req, u) {
 function ensureDirs() {
   fs.mkdirSync(TOPICS_DIR, { recursive: true })
   fs.mkdirSync(IMAGES_DIR, { recursive: true })
+  fs.mkdirSync(AUDIO_DIR, { recursive: true })
 }
 function newId() {
   return 't' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex')
@@ -260,12 +284,12 @@ function stripThink(s) {
   return String(s || '').replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim()
 }
 
-// ---------- MiniMax 上游 ----------
-function upstream(cfg, urlPath, body, stream) {
-  return fetch(cfg.minimax_base_url.replace(/\/+$/, '') + urlPath, {
+// ---------- 生成 provider 上游（通用：base_url + api_key + 路径，兼容 MiniMax 端点格式） ----------
+function genUpstream(gen, urlPath, body) {
+  return fetch(gen.base_url.replace(/\/+$/, '') + urlPath, {
     method: 'POST',
     headers: {
-      Authorization: 'Bearer ' + cfg.minimax_api_key,
+      Authorization: 'Bearer ' + gen.api_key,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(body)
@@ -444,16 +468,17 @@ async function genTitle(backend, userMsg, assistantMsg) {
   return title || null
 }
 
-// ---------- 图像生成 ----------
+// ---------- 图像生成（通用 provider） ----------
 async function handleImage(req, res, body) {
   const cfg = loadConfig()
-  if (!cfg.minimax_api_key) return sendJson(res, 400, { error: '未配置 minimax_api_key' })
+  const gen = cfg.image || {}
+  if (!gen.api_key) return sendJson(res, 400, { error: '未配置生图 provider（config.json 的 image.api_key）' })
   const prompt = String(body.prompt || '').trim()
   if (!prompt) return sendJson(res, 400, { error: 'prompt 为空' })
   const aspect = /^[0-9]+:[0-9]+$/.test(body.aspect_ratio || '') ? body.aspect_ratio : '1:1'
   try {
-    const up = await upstream(cfg, '/v1/image_generation', {
-      model: cfg.image_model,
+    const up = await genUpstream(gen, gen.path || '/v1/image_generation', {
+      model: gen.model,
       prompt,
       aspect_ratio: aspect,
       response_format: 'url',
@@ -478,6 +503,38 @@ async function handleImage(req, res, body) {
   }
 }
 
+// ---------- 语音生成 TTS（通用 provider，端点格式兼容 MiniMax t2a_v2） ----------
+async function handleTts(req, res, body) {
+  const cfg = loadConfig()
+  const gen = cfg.tts || {}
+  if (!gen.api_key) return sendJson(res, 400, { error: '未配置语音 provider（config.json 的 tts.api_key）' })
+  const text = String(body.text || '').trim()
+  if (!text) return sendJson(res, 400, { error: 'text 为空' })
+  if (text.length > 2000) return sendJson(res, 400, { error: '文本过长（>2000 字）' })
+  try {
+    const up = await genUpstream(gen, gen.path || '/v1/t2a_v2', {
+      model: gen.model,
+      text,
+      stream: false,
+      voice_setting: { voice_id: gen.voice, speed: 1, vol: 1, pitch: 0 },
+      audio_setting: { format: 'mp3', sample_rate: 32000, bitrate: 128000, channel: 1 }
+    })
+    const j = await up.json().catch(() => null)
+    const hex = j && j.data && j.data.audio
+    if (!hex) {
+      const msg = (j && j.base_resp && j.base_resp.status_msg) || ('HTTP ' + up.status)
+      return sendJson(res, 502, { error: '语音生成失败：' + msg })
+    }
+    const buf = Buffer.from(hex, 'hex')
+    ensureDirs()
+    const name = crypto.createHash('sha1').update(text + Date.now()).digest('hex').slice(0, 16) + '.mp3'
+    fs.writeFileSync(path.join(AUDIO_DIR, name), buf)
+    sendJson(res, 200, { url: '/audio/' + name, bytes: buf.length })
+  } catch (e) {
+    sendJson(res, 502, { error: '语音生成异常：' + e.message })
+  }
+}
+
 // ---------- Markdown 导出 ----------
 function exportMarkdown(topic) {
   const lines = ['# ' + (topic.title || '未命名话题'), '']
@@ -489,6 +546,7 @@ function exportMarkdown(topic) {
     lines.push('')
     lines.push(m.content || '')
     for (const img of m.images || []) lines.push('![](' + img + ')')
+    for (const au of m.audios || []) lines.push('🔊 [' + au + '](' + au + ')')
     lines.push('')
   }
   return lines.join('\n')
@@ -512,7 +570,8 @@ async function route(req, res) {
       auth: !!serviceToken(),
       chat: backend && !backend.error ? { model: backend.model, source: backend.source } : null,
       chat_error: backend && backend.error ? backend.error : undefined,
-      image: !!cfg.minimax_api_key,
+      image: !!(cfg.image && cfg.image.api_key),
+      tts: !!(cfg.tts && cfg.tts.api_key),
     })
   }
 
@@ -547,6 +606,17 @@ async function route(req, res) {
     if (!fs.existsSync(fp)) { res.writeHead(404); res.end(); return }
     const ext = path.extname(name).toLowerCase()
     const mime = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' }[ext] || 'application/octet-stream'
+    res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000, immutable' })
+    fs.createReadStream(fp).pipe(res)
+    return
+  }
+  if (p.startsWith('/audio/')) {
+    const name = p.slice('/audio/'.length)
+    if (!/^[A-Za-z0-9._-]+$/.test(name) || name.includes('..')) { res.writeHead(403); res.end(); return }
+    const fp = path.join(AUDIO_DIR, name)
+    if (!fs.existsSync(fp)) { res.writeHead(404); res.end(); return }
+    const ext = path.extname(name).toLowerCase()
+    const mime = { '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.flac': 'audio/flac' }[ext] || 'application/octet-stream'
     res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000, immutable' })
     fs.createReadStream(fp).pipe(res)
     return
@@ -596,6 +666,7 @@ async function route(req, res) {
       t.messages.push({
         role, content: String(body.content || ''),
         images: Array.isArray(body.images) ? body.images.map(String) : undefined,
+        audios: Array.isArray(body.audios) ? body.audios.map(String) : undefined,
         ts: new Date().toISOString()
       })
       writeTopic(t)
@@ -634,6 +705,11 @@ async function route(req, res) {
   if (p === '/api/image' && req.method === 'POST') {
     const body = await readBody(req)
     return handleImage(req, res, body)
+  }
+
+  if (p === '/api/tts' && req.method === 'POST') {
+    const body = await readBody(req)
+    return handleTts(req, res, body)
   }
 
   sendJson(res, 404, { error: 'not found' })

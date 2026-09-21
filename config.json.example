@@ -2,9 +2,19 @@
   "chat_base_url": "",
   "chat_api_key": "",
   "chat_model": "",
-  "minimax_api_key": "",
-  "minimax_base_url": "https://api.minimaxi.com",
-  "image_model": "image-01",
+  "image": {
+    "base_url": "https://api.minimaxi.com",
+    "api_key": "",
+    "model": "image-01",
+    "path": "/v1/image_generation"
+  },
+  "tts": {
+    "base_url": "https://api.minimaxi.com",
+    "api_key": "",
+    "model": "speech-02-hd",
+    "voice": "male-qn-qingse",
+    "path": "/v1/t2a_v2"
+  },
   "port": 58931,
   "bind": ""
 }

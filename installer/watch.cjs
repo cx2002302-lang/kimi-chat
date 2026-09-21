@@ -75,7 +75,7 @@ function loop() {
   fs.mkdirSync(STATE_DIR, { recursive: true })
   fs.writeFileSync(PID_FILE, String(process.pid))
   logLine('watchdog started pid=' + process.pid)
-  // 同进程托管本地聊天服务（话题存储 + MiniMax 代理），端口被占时自动降级为纯看门狗
+  // 同进程托管本地聊天服务（话题存储 + 聊天/生成代理），端口被占时自动降级为纯看门狗
   try {
     require(path.join(__dirname, 'service.cjs')).start()
   } catch (e) {

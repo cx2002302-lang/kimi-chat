@@ -3,7 +3,7 @@
  * 功能：① 侧边栏「聊天」按钮 → 全屏「讨论空间」模块（复刻会话窗口形态）
  *       ② 话题管理：新建/搜索/置顶/重命名/删除/清空/生成图标/导出 Markdown
  *       ③ 讨论聊天：跟随 Kimi Code CLI 默认模型（本地服务代理，与会话同源），
- *          支持 Markdown / ```vcp HTML/SVG 视觉辅助 / /img 生图（MiniMax）
+ *          支持 Markdown / ```vcp HTML/SVG 视觉辅助 / /img 生图 / /tts 语音
  *       ④ 专用功能：开展会话（话题一键转为真实会话）/ 复制聊天ID / 复制引用
  *       ⑤ VCP 渲染开关（渲染 HTML / 美学注入 / 可信模式）
  *       ⑥ 会话消息区 ```vcp 代码块 → 视觉卡片渲染（观察器 + VCPRender 引擎）
@@ -11,7 +11,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.4.2'
+  var VERSION = '0.5.0'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC = location.protocol + '//' + location.hostname + ':58931'
   var MODULE_HASH = 'kc-chat'
@@ -236,6 +236,14 @@
       img.alt = '生成图像'
       el.appendChild(img)
     }
+    for (var a = 0; a < (msg.audios || []).length; a++) {
+      var au = document.createElement('audio')
+      au.className = 'kc-msg-audio'
+      au.controls = true
+      au.src = svcUrl(msg.audios[a])
+      au.style.cssText = 'display:block;margin-top:8px;width:100%;max-width:420px;'
+      el.appendChild(au)
+    }
   }
 
   // ---------- 本地服务 API ----------
@@ -292,7 +300,7 @@
     btn.addEventListener('mouseleave', function () { btn.style.background = 'var(--kc-btn-bg,rgba(128,128,128,.08))' })
     btn.addEventListener('click', function () { chatModule.toggle() })
     anchor.parentElement.insertBefore(btn, anchor.nextSibling)
-    // 生成图标就绪后替换 SVG（MiniMax 生成的模块图标，随插件打包）
+    // 生成图标就绪后替换 SVG（模块图标，随插件打包）
     var probe = new Image()
     probe.onload = function () {
       if (!btn.isConnected) return
@@ -381,7 +389,7 @@
         '    <div class="kc-msgs"></div>' +
         '    <div class="kc-composer-wrap">' +
         '      <div class="kc-composer">' +
-        '        <textarea class="kc-input" rows="2" placeholder="讨论点什么… Enter 发送 / Shift+Enter 换行；/img 描述 可生成图像"></textarea>' +
+        '        <textarea class="kc-input" rows="2" placeholder="讨论点什么… Enter 发送 / Shift+Enter 换行；/img 生图、/tts 语音"></textarea>' +
         '        <button class="kc-send" data-act="send" title="发送">↑</button>' +
         '        <button class="kc-stop" data-act="stop" title="停止" hidden>■</button>' +
         '      </div>' +
@@ -520,7 +528,7 @@
           return
         }
         els.svcdown.hidden = true
-        els.status.textContent = (h.chat ? h.chat.model : '聊天后端未配置') + (h.image ? ' · 生图✓' : '')
+        els.status.textContent = (h.chat ? h.chat.model : '聊天后端未配置') + (h.image ? ' · 生图✓' : '') + (h.tts ? ' · 语音✓' : '')
         if (h.chat_error) els.status.textContent = '聊天后端异常'
         loadTopics()
       })
@@ -823,6 +831,7 @@
       els.input.value = ''
       autosize()
       if (text.indexOf('/img ') === 0) return sendImage(text.slice(5).trim())
+      if (text.indexOf('/tts ') === 0) return sendTts(text.slice(5).trim())
 
       appendMsgEl({ role: 'user', content: text })
       var aiEl = appendMsgEl({ role: 'assistant', content: '' })
@@ -899,6 +908,31 @@
         })
       }).catch(function (e) {
         renderInto(aiEl, { role: 'assistant', content: '⚠️ 图像生成失败：' + e.message })
+      }).then(function () {
+        setBusy(false)
+        scrollBottom()
+      })
+    }
+
+    function sendTts(text) {
+      if (!text) { toast('用法：/tts 要朗读的文本'); return }
+      appendMsgEl({ role: 'user', content: '/tts ' + text })
+      var aiEl = appendMsgEl({ role: 'assistant', content: '正在生成语音…' })
+      setBusy(true)
+      scrollBottom()
+      svcJson('/api/topics/' + cur.id + '/messages', {
+        method: 'POST', body: JSON.stringify({ role: 'user', content: '/tts ' + text })
+      }).then(function () {
+        return svcJson('/api/tts', { method: 'POST', body: JSON.stringify({ text: text }) })
+      }).then(function (j) {
+        return svcJson('/api/topics/' + cur.id + '/messages', {
+          method: 'POST',
+          body: JSON.stringify({ role: 'assistant', content: '🔊 已生成语音：' + text.slice(0, 40), audios: [j.url] })
+        }).then(function () {
+          renderInto(aiEl, { role: 'assistant', content: '🔊 已生成语音：' + text.slice(0, 40), audios: [j.url] })
+        })
+      }).catch(function (e) {
+        renderInto(aiEl, { role: 'assistant', content: '⚠️ 语音生成失败：' + e.message })
       }).then(function () {
         setBusy(false)
         scrollBottom()

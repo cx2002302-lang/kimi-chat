@@ -32,7 +32,7 @@ try {
   const h = await fetch(BASE + '/api/health').then(j)
   ok('health ok', h.ok === true)
   ok('临时 HOME 无 CLI 配置时 chat=null 且有 chat_error', h.chat === null && typeof h.chat_error === 'string')
-  ok('未配置 key 时 image=false', h.image === false)
+  ok('未配置 key 时 image/tts=false', h.image === false && h.tts === false)
 
   console.log('话题 CRUD:')
   const t = await fetch(BASE + '/api/topics', { method: 'POST', body: '{}' }).then(j)
@@ -69,7 +69,12 @@ try {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt: 'x' }),
   }).then(j)
-  ok('未配 key 时生图返回明确错误', /minimax_api_key/.test(noKeyImg.error || ''))
+  ok('未配 key 时生图返回明确错误', /image\.api_key|生图 provider/.test(noKeyImg.error || ''))
+  const noKeyTts = await fetch(BASE + '/api/tts', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'x' }),
+  }).then(j)
+  ok('未配 key 时语音返回明确错误', /tts\.api_key|语音 provider/.test(noKeyTts.error || ''))
   const nf = await fetch(BASE + '/api/topics/t不存在').then((r) => r.status)
   ok('不存在话题 404', nf === 404)
   const badImg = await fetch(BASE + '/images/..%2Fconfig.json').then((r) => r.status)

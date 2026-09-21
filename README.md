@@ -5,7 +5,7 @@
 > A **Discussion Space** plugin for [Kimi Code CLI](https://www.kimi.com/code/docs/en/) Web UI (`kimi web`) — a full-screen chat module for *talking through problems*, with 🎨 VCP visual rendering (HTML/SVG/Mermaid/KaTeX cards), fully decoupled from coding sessions.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.2-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -59,10 +59,11 @@ It also embeds the **VCP (Visual Card Protocol)** renderer adapted from [dsh-raw
 - 🎓 A bundled `vcp-design` Skill teaches agents the design system (12 style libraries)
 - Three toggles: **Render HTML** (on), **Aesthetic injection** (on), **Trusted mode** (off — card scripts stay inert)
 
-### ⑤ 🖼️ MiniMax for image assets only
+### ⑤ 🖼️🔊 Configurable generation providers (image + speech)
 
-- `/img <description>` in chat generates images via MiniMax — **images only**, never involved in chat completion
-- API key stays server-side (`~/.kimi-code/kimi-chat/config.json`, mode 600), never sent to the browser
+- `/img <description>` generates images, `/tts <text>` generates speech — both via **generic provider configs** (endpoint format is MiniMax-API-compatible; point them at any compatible service)
+- Two independent providers: `image{base_url,api_key,model,path}` and `tts{base_url,api_key,model,voice,path}`
+- Keys stay server-side (`~/.kimi-code/kimi-chat/config.json`, mode 600), never sent to the browser
 
 ### ⑥ 📁 Bonus: "New folder" in the workspace picker
 
@@ -83,7 +84,7 @@ node ~/.kimi-code/plugins/managed/kimi-chat/installer/install.cjs
 # 3) Hard-refresh the browser (Ctrl+F5) — no need to restart kimi web
 ```
 
-Chat works out of the box (follows your CLI default model). For `/img` and topic icons, put your MiniMax key into `~/.kimi-code/kimi-chat/config.json` (see `config.json.example`).
+Chat works out of the box (follows your CLI default model). For `/img` and `/tts`, fill in your generation provider keys in `~/.kimi-code/kimi-chat/config.json` (see `config.json.example`).
 
 ## ⚙️ Configuration
 
@@ -93,9 +94,8 @@ Chat works out of the box (follows your CLI default model). For `/img` and topic
 |---|---|---|
 | `chat_base_url` | (empty) | Override chat backend with any OpenAI-compatible endpoint; empty = follow CLI `default_model` |
 | `chat_api_key` / `chat_model` | (empty) | Credentials/model for the override endpoint |
-| `minimax_api_key` | (empty) | MiniMax key — **image generation only** |
-| `minimax_base_url` | `https://api.minimaxi.com` | Or `https://api.minimax.cn` |
-| `image_model` | `image-01` | Image model |
+| `image` | `{base_url,api_key,model,path}` | 🖼️ Image generation provider (MiniMax-API-compatible endpoint format) |
+| `tts` | `{base_url,api_key,model,voice,path}` | 🔊 Speech generation provider (`t2a_v2`-compatible) |
 | `port` | `58931` | Local service port |
 | `bind` | (empty) | `0.0.0.0` when a `server.token` exists (auth-protected, remote-browser friendly), else `127.0.0.1` |
 

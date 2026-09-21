@@ -5,7 +5,7 @@
 > 给 [Kimi Code CLI](https://www.kimi.com/code/docs/en/) 的 Web UI（`kimi web`）加一个**「讨论空间」**——以讨论问题为主的全屏聊天模块，🎨 支持 VCP 视觉渲染（HTML/SVG/Mermaid/KaTeX 卡片），与会话系统完全解耦。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.2-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -59,10 +59,11 @@ Kimi Code 的会话是用来**写代码**的；kimi-chat 给你一个专门**想
 - 🎓 随附 `vcp-design` Skill 设计规范（12 套风格库），agent 越画越好看
 - 三个开关：**渲染 HTML**（默认开）、**美学注入**（默认开）、**可信模式**（默认关，卡片脚本不执行）
 
-### ⑤ 🖼️ MiniMax 仅用于图像资产
+### ⑤ 🖼️🔊 可配置的生成 provider（生图 + 语音）
 
-- 聊天里 `/img 描述` 调 MiniMax 生图——**只负责图像**，不参与聊天补全
-- API key 只存服务端（`~/.kimi-code/kimi-chat/config.json`，600 权限），不下发浏览器
+- 聊天里 `/img 描述` 生图、`/tts 文本` 生成语音——**通用 provider 配置**，端点格式兼容 MiniMax API，但不锁定任何厂商，可换成任意兼容服务
+- 两个独立 provider：`image{base_url,api_key,model,path}` 与 `tts{base_url,api_key,model,voice,path}`
+- key 只存服务端（`~/.kimi-code/kimi-chat/config.json`，600 权限），不下发浏览器
 
 ### ⑥ 📁 彩蛋：工作区选择器「新建文件夹」
 
@@ -83,7 +84,7 @@ node ~/.kimi-code/plugins/managed/kimi-chat/installer/install.cjs
 # 3) 强刷浏览器（Ctrl+F5）即可，无需重启 kimi web
 ```
 
-聊天开箱即用（跟随 CLI 默认模型）；`/img` 生图与话题图标需在 `~/.kimi-code/kimi-chat/config.json` 填入 MiniMax key（参考 `config.json.example`）。
+聊天开箱即用（跟随 CLI 默认模型）；`/img` 生图与 `/tts` 语音需在 `~/.kimi-code/kimi-chat/config.json` 填入生成 provider 的 key（参考 `config.json.example`）。
 
 ## ⚙️ 配置
 
@@ -93,9 +94,8 @@ node ~/.kimi-code/plugins/managed/kimi-chat/installer/install.cjs
 |---|---|---|
 | `chat_base_url` | （空） | 覆盖聊天后端为任意 OpenAI 兼容端点；留空 = 跟随 CLI `default_model` |
 | `chat_api_key` / `chat_model` | （空） | 覆盖端的凭证与模型名 |
-| `minimax_api_key` | （空） | MiniMax key——**仅用于生图** |
-| `minimax_base_url` | `https://api.minimaxi.com` | 国内站可用 `https://api.minimax.cn` |
-| `image_model` | `image-01` | 生图模型 |
+| `image` | `{base_url,api_key,model,path}` | 🖼️ 生图 provider（端点格式兼容 MiniMax API） |
+| `tts` | `{base_url,api_key,model,voice,path}` | 🔊 语音 provider（兼容 `t2a_v2` 格式） |
 | `port` | `58931` | 本地服务端口 |
 | `bind` | （空） | 有 `server.token` 时为 `0.0.0.0`（认证保护，远程浏览器可连），否则 `127.0.0.1` |
 

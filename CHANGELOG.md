@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.5.0（2026-09-21）—— 通用生成 provider（生图 + 语音），去除 MiniMax 品牌绑定
+
+**需求**：生图/语音不应锁死在 MiniMax——做成**通用 provider 配置**（可配 MiniMax，也可配任何兼容端点）。
+
+- **配置结构重构**：`minimax_api_key` / `minimax_base_url` / `image_model` 三个扁平字段 →
+  `image{base_url,api_key,model,path}` 与 `tts{base_url,api_key,model,voice,path}` 两个独立 provider；
+  旧配置自动兼容映射（无需手动迁移）。安装器首装配置同步改为新结构，
+  key 环境变量改为 `KIMI_CHAT_GEN_KEY`（旧 `KIMI_CHAT_MINIMAX_KEY` 仍可读）。
+- **新增语音生成**：`POST /api/tts`（端点格式兼容 MiniMax `t2a_v2`，hex 音频解码落盘
+  `audio/`，`/audio/<file>` 静态路由防路径穿越）；聊天里 **`/tts 文本`** 命令生成语音，
+  消息内联 `<audio>` 播放器；导出 Markdown 含音频链接。
+- **UI 状态行**：`生图✓` / `语音✓` 分别按 provider 配置显示；输入框提示更新。
+- **去品牌化**：插件描述、README、UI 文案不再出现 MiniMax——它只是可配置的 provider 之一。
+
 ## v0.4.2（2026-09-21）—— 修复讨论空间内 mermaid / KaTeX / 图表工具栏渲染
 
 发布页截图实测发现的三个真实 bug（均在全屏模块的 shadow DOM 内触发）：

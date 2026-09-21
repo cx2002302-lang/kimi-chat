@@ -129,21 +129,19 @@ function patchDist(dist, pluginRoot, dryRun) {
   return { skipped: false }
 }
 
-/** 首装引导：创建本地服务配置（API key 从 --key= 或 KIMI_CHAT_MINIMAX_KEY 取）。 */
+/** 首装引导：创建本地服务配置（key 从 --key= 或 KIMI_CHAT_GEN_KEY / KIMI_CHAT_MINIMAX_KEY 取）。 */
 function ensureConfig() {
   const cfgFile = path.join(os.homedir(), '.kimi-code', 'kimi-chat', 'config.json')
   if (fs.existsSync(cfgFile)) return
   const keyArg = (process.argv.find(a => a.startsWith('--key=')) || '').slice(6)
-  const key = keyArg || process.env.KIMI_CHAT_MINIMAX_KEY || ''
+  const key = keyArg || process.env.KIMI_CHAT_GEN_KEY || process.env.KIMI_CHAT_MINIMAX_KEY || ''
   fs.mkdirSync(path.dirname(cfgFile), { recursive: true })
   fs.writeFileSync(cfgFile, JSON.stringify({
-    minimax_api_key: key,
-    minimax_base_url: 'https://api.minimaxi.com',
-    chat_model: 'MiniMax-M2',
-    image_model: 'image-01',
+    image: { base_url: 'https://api.minimaxi.com', api_key: key, model: 'image-01', path: '/v1/image_generation' },
+    tts: { base_url: 'https://api.minimaxi.com', api_key: key, model: 'speech-02-hd', voice: 'male-qn-qingse', path: '/v1/t2a_v2' },
     port: 58931,
   }, null, 2), { mode: 0o600 })
-  log('已创建配置', cfgFile, key ? '（含 API key）' : '（未含 API key：独立聊天需手动填入 minimax_api_key）')
+  log('已创建配置', cfgFile, key ? '（含生成 provider key）' : '（未含 key：/img 生图与 /tts 语音需手动填入 image.api_key / tts.api_key）')
 }
 
 function main() {
