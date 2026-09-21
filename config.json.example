@@ -1,0 +1,10 @@
+{
+  "chat_base_url": "",
+  "chat_api_key": "",
+  "chat_model": "",
+  "minimax_api_key": "",
+  "minimax_base_url": "https://api.minimaxi.com",
+  "image_model": "image-01",
+  "port": 58931,
+  "bind": ""
+}

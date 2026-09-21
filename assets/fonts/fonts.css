@@ -1,0 +1,8 @@
+/* kimi-chat 内置字体注册（由安装器拷贝到 Web UI 静态目录后全局加载） */
+@font-face{font-family:'Lanxi-WenKai';src:url('/assets/kimi-chat/fonts/Lanxi-WenKai.woff2') format('woff2');font-display:swap;}
+@font-face{font-family:'Lanxi-WenKaiLight';src:url('/assets/kimi-chat/fonts/Lanxi-WenKaiLight.woff2') format('woff2');font-display:swap;}
+@font-face{font-family:'Lanxi-MaShanZheng';src:url('/assets/kimi-chat/fonts/Lanxi-MaShanZheng.woff2') format('woff2');font-display:swap;}
+@font-face{font-family:'Lanxi-HeiTi';src:url('/assets/kimi-chat/fonts/Lanxi-HeiTi.woff2') format('woff2');font-display:swap;}
+@font-face{font-family:'Lanxi-HeiTiLight';src:url('/assets/kimi-chat/fonts/Lanxi-HeiTiLight.woff2') format('woff2');font-display:swap;}
+@font-face{font-family:'Lanxi-HeiTiBold';src:url('/assets/kimi-chat/fonts/Lanxi-HeiTiBold.woff2') format('woff2');font-display:swap;}
+@font-face{font-family:'Lanxi-GreatVibes';src:url('/assets/kimi-chat/fonts/Lanxi-GreatVibes.woff2') format('woff2');font-display:swap;}

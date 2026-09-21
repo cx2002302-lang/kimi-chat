@@ -1,0 +1,40 @@
+{
+  "name": "kimi-chat",
+  "version": "0.4.2",
+  "description": "Kimi Code 讨论空间插件：Web UI 侧边栏「聊天」按钮 → 全屏讨论模块（复刻会话窗口形态，话题独立管理，聊天后端跟随 CLI 默认模型，HTML/SVG 视觉辅助讨论），MiniMax 仅用于图像资产；内置 VCP 视觉通感（适配自 dsh-raw-html）",
+  "keywords": [
+    "chat",
+    "discussion",
+    "vcp",
+    "html",
+    "svg",
+    "visual",
+    "sidebar",
+    "topics"
+  ],
+  "author": "cx2002302-lang",
+  "license": "MIT",
+  "interface": {
+    "displayName": "聊天 · 讨论空间（VCP 视觉通感）",
+    "shortDescription": "全屏讨论空间（话题库 + 视觉化讨论）+ HTML 视觉卡片渲染",
+    "longDescription": "在 Kimi Code Web UI 侧边栏增加「聊天」按钮，点击进入全屏「讨论空间」模块：布局复刻会话窗口（左侧话题栏 + 主聊天区），但以讨论问题为主——讨论助手（跟随 Kimi Code CLI 默认模型，与会话同源）会主动用 HTML/SVG/图表/KaTeX 帮你把问题看清楚。话题独立管理（新建/搜索/置顶/重命名/删除/清空/生成图标/导出），记录以 JSON 文件存于 ~/.kimi-code/kimi-chat/topics/；专用功能「⇗ 开展会话」可一键把话题带去真实会话深入研究，「⧉ 复制聊天ID」便于引用。MiniMax 仅用于生成图标/图片等图像资产。同时内置 dsh-raw-html 的 VCP 视觉通感协议适配：kimi 会话里的 agent 也可输出 ```vcp 视觉卡片，由注入的渲染引擎渲染为真实界面。设计规范以 Skill 形式随附。",
+    "websiteURL": "https://github.com/plolpl789/dsh-raw-html"
+  },
+  "systemPromptPath": "./SYSTEM.md",
+  "skills": [
+    "./skills/vcp-design"
+  ],
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "matcher": "startup|resume",
+      "command": "node ./installer/heal.cjs",
+      "timeout": 10
+    },
+    {
+      "event": "SessionHeartbeat",
+      "command": "node ./installer/heal.cjs",
+      "timeout": 10
+    }
+  ]
+}

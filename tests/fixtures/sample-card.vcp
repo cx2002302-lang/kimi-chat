@@ -1,0 +1,15 @@
+<div id="vcp-root" style="background:#f5f0e6;color:#3a2f28;font-family:'Lanxi-WenKai',serif;font-size:15px;padding:24px;box-sizing:border-box;">
+<style>
+#vcp-root .t{font-size:26px;font-weight:700;color:#8b2e2e;margin:0 0 8px;}
+#vcp-root .box{background:#ffffff;border-radius:12px;padding:14px;margin-top:12px;box-shadow:0 1px 4px rgba(60,40,20,.08);}
+</style>
+<div class="t">VCP 渲染测试</div>
+<div class="box">这是一张测试卡片 <b>加粗</b> <i>斜体</i> <span style="color:#8b2e2e;">彩色</span></div>
+<div class="box">公式测试：$$E=mc^2$$ 与行内 \(a^2+b^2=c^2\)</div>
+<div class="box"><pre class="language-mermaid"><code>graph TD
+  A[开始] --> B{开关已开?}
+  B -->|是| C[渲染卡片]
+  B -->|否| D[保持代码]
+</code></pre></div>
+<div class="box"><button onclick="input('你好，这是桥接测试')">点我填包</button></div>
+</div>
