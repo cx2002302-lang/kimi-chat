@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.4（2026-09-22）—— 统一入口免 token：打开即登录
+
+- **自动登录**：反代 HTML 时注入 `/kc-api/inject-token.js`，服务端实时读取当前
+  `server.token` 写入 kimi web 的 localStorage 凭证位。直接打开
+  `http://<主机>:58931/` 即可使用，token 每次轮换也无感（`config.json` 设
+  `"auto_token": false` 可关闭）。
+- 修复 kimi web 自家 `/api/v1/*`、`/api/v2/*` 被本服务 API 路由截胡返回 404
+  （导致无 token 打开时卡在启动屏 "Checking sign-in"）。
+- 修复 WS 隧道 403：上游校验 Origin，转发时 Host/Origin/Referer 统一改写为
+  `127.0.0.1:<上游端口>`。
+- 无 token 全新浏览器实测：启动屏通过、0 个 4xx/5xx、WS 长连接正常、
+  聊天面板话题/流式/模型/生图/语音全部可用。
+
 ## v0.5.3（2026-09-22）—— 修复统一入口健康检查路由 + 自动跳转统一入口
 
 - `/kc-api/health` 剥离前缀后变成 `/health`，落不到 `/api/health` 被反代到 kimi web，

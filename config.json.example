@@ -16,5 +16,7 @@
     "path": "/v1/t2a_v2"
   },
   "port": 58931,
-  "bind": ""
+  "bind": "",
+  "web_port": 0,
+  "auto_token": true
 }

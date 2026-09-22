@@ -25,7 +25,7 @@ const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.5.2'
+const VERSION = '0.5.4'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -573,6 +573,9 @@ async function findWebPort(cfg) {
   return 0
 }
 // 反向代理：把非本服务 API 的请求转给 kimi web（Host 改写绕开 DNS-rebinding 检查）
+// HTML 页面会注入 <script src="/kc-api/inject-token.js">：服务端把当前有效 token 写进
+// localStorage，用户直接打开 http://<host>:58931/ 即已登录，token 轮换也无感。
+// 可在 config.json 设 "auto_token": false 关闭（关闭后需手动带 #token=）。
 async function proxyToWeb(req, res) {
   const port = await findWebPort(loadConfig())
   if (!port) {
@@ -581,9 +584,28 @@ async function proxyToWeb(req, res) {
     return
   }
   const headers = Object.assign({}, req.headers, { host: '127.0.0.1:' + port })
+  const cfg = loadConfig()
+  const inject = req.method === 'GET' && cfg.auto_token !== false && !!serviceToken()
   const preq = http.request({ host: '127.0.0.1', port, path: req.url, method: req.method, headers }, (pres) => {
-    res.writeHead(pres.statusCode || 502, pres.headers)
-    pres.pipe(res)
+    const ctype = String((pres.headers || {})['content-type'] || '')
+    if (!inject || !ctype.includes('text/html')) {
+      res.writeHead(pres.statusCode || 502, pres.headers)
+      pres.pipe(res)
+      return
+    }
+    const chunks = []
+    pres.on('data', (c) => chunks.push(c))
+    pres.on('end', () => {
+      let body = Buffer.concat(chunks).toString('utf8')
+      const tag = '<script src="/kc-api/inject-token.js"></script>'
+      if (!body.includes('/kc-api/inject-token.js')) {
+        body = body.replace(/<head[^>]*>/i, (m) => m + tag)
+      }
+      const outHeaders = Object.assign({}, pres.headers)
+      outHeaders['content-length'] = Buffer.byteLength(body)
+      res.writeHead(pres.statusCode || 502, outHeaders)
+      res.end(body)
+    })
   })
   preq.on('error', () => { try { res.writeHead(502); res.end() } catch { /* 已断 */ } })
   req.pipe(preq)
@@ -595,10 +617,12 @@ function tunnelUpgrade(req, socket, head) {
     const up = net.connect(port, '127.0.0.1', () => {
       const lines = [req.method + ' ' + req.url + ' HTTP/' + req.httpVersion]
       for (const k of Object.keys(req.headers)) {
-        if (k.toLowerCase() === 'host') continue
+        const lk = k.toLowerCase()
+        if (lk === 'host' || lk === 'origin' || lk === 'referer') continue
         lines.push(k + ': ' + req.headers[k])
       }
-      lines.push('host: 127.0.0.1:' + port, '', '')
+      // Host/Origin/Referer 统一改写为上游本机地址（上游会校验 Origin，与页面端口不一致会 403）
+      lines.push('host: 127.0.0.1:' + port, 'origin: http://127.0.0.1:' + port, '', '')
       up.write(lines.join('\r\n'))
       if (head && head.length) up.write(head)
       up.pipe(socket)
@@ -620,7 +644,22 @@ async function route(req, res) {
     req.url = rest + (u.search || '')
     u = new URL(req.url, 'http://127.0.0.1')
     p = u.pathname
+    // 统一入口自动登录助手：把当前有效 token 写入 kimi web 的 localStorage 凭证位
+    // （每次请求实时读 server.token，token 轮换也无感；config.auto_token=false 可关）
+    if (p === '/inject-token.js') {
+      const cfg = loadConfig()
+      const token = cfg.auto_token === false ? null : serviceToken()
+      const js = token
+        ? 'try{localStorage.setItem("kimi-web.server-credential",JSON.stringify({version:1,credential:' +
+          JSON.stringify(token) + ',expiresAt:Date.now()+6048e5}))}catch(e){}\n'
+        : '/* kimi-chat auto_token disabled */\n'
+      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-cache' })
+      res.end(js)
+      return
+    }
   }
+  // kimi web 自家的 /api/vN/* 一律反代（本服务 API 命名空间不带版本号，不与之重叠）
+  if (/^\/api\/v\d+\//.test(p)) return proxyToWeb(req, res)
   const isApi = p.startsWith('/api/') || p.startsWith('/images/') || p.startsWith('/audio/')
   if (!isApi) return proxyToWeb(req, res)
   cors(res)

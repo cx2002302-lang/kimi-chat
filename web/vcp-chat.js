@@ -11,7 +11,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.5.2'
+  var VERSION = '0.5.4'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -550,7 +550,14 @@
             var tip = els.svcdown.querySelector('.kc-svcdown-tip')
             if (tip) tip.innerHTML = '新版 kimi web 的安全策略（CSP）禁止页面跨端口直连。<br>正在带你跳到统一入口（自动带上 token）…'
             setTimeout(function () {
-              location.replace(location.protocol + '//' + location.hostname + ':58931/' + location.hash)
+              // hash 里没 token 时，从本源 localStorage（kimi-web 已记住的凭证）捎上，
+              // 这样只需跳一次，统一入口以后也记住登录态
+              var hash = location.hash || ''
+              if (hash.indexOf('token=') === -1) {
+                var t = getToken()
+                if (t) hash = '#token=' + encodeURIComponent(t)
+              }
+              location.replace(location.protocol + '//' + location.hostname + ':58931/' + hash)
             }, 1200)
           }
           return
