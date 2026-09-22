@@ -180,16 +180,21 @@
 .kc-hbtn-primary { background: var(--kc-accent); border-color: transparent; color: #fff; }
 .kc-hbtn-primary:hover { background: var(--kc-accent-hover); }
 
+.kc-msgs-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .kc-msgs {
   flex: 1; overflow-y: auto;
   padding: 20px 0 12px;
   display: flex; flex-direction: column;
 }
-.kc-msg { display: flex; padding: 5px 0; }
-.kc-msg > .kc-msg-content { width: 100%; max-width: 780px; margin: 0 auto; padding: 0 24px; box-sizing: border-box; }
+/* 消息行 = 共享流动栏：助手卡片拉满栏宽，用户气泡同栏右对齐，两者右缘对齐；随窗口/缩放自适应 */
+.kc-msg {
+  display: flex; width: 100%; max-width: 1500px; margin: 0 auto;
+  padding: 5px 24px; box-sizing: border-box;
+}
+.kc-msg > .kc-msg-content { width: 100%; min-width: 0; }
 .kc-msg-user { justify-content: flex-end; }
 .kc-msg-user > .kc-msg-content {
-  width: auto; max-width: min(70%, 640px); margin: 0 24px 0 auto;
+  flex: none; width: auto; max-width: min(72%, 640px); margin-left: auto;
   background: var(--kc-accent); color: #fff;
   padding: 9px 13px; border-radius: 14px 14px 4px 14px;
   white-space: pre-wrap; word-break: break-word; font-size: 13.5px; line-height: 1.6;
@@ -222,19 +227,20 @@
   color: var(--kc-fg-dim);
 }
 
-/* 底部输入区（复刻会话 composer） */
-.kc-composer-wrap { padding: 6px 0 14px; }
+/* 底部输入区（与消息栏同一条流动栏，右缘对齐） */
+.kc-composer-wrap {
+  width: 100%; max-width: 1500px; margin: 0 auto; box-sizing: border-box;
+  padding: 6px 24px 14px;
+}
 .kc-composer {
-  width: 100%; max-width: 780px; margin: 0 auto; box-sizing: border-box;
+  width: 100%; box-sizing: border-box;
   display: flex; align-items: flex-end; gap: 8px;
-  margin-left: auto; margin-right: auto;
   padding: 10px 12px;
   border: 1px solid var(--kc-border); border-radius: 14px;
   background: var(--kc-bg);
   box-shadow: 0 2px 12px rgba(0,0,0,.06);
 }
 .kc-composer:focus-within { border-color: var(--kc-accent); }
-.kc-composer-wrap { padding-left: 24px; padding-right: 24px; box-sizing: border-box; }
 .kc-input {
   flex: 1; resize: none; max-height: 160px; box-sizing: border-box;
   border: none; background: transparent; color: inherit;
@@ -250,7 +256,7 @@
 .kc-send:hover { background: var(--kc-accent-hover); }
 .kc-stop { background: #c0392b; color: #fff; }
 .kc-composer-hint {
-  max-width: 780px; margin: 6px auto 0; padding: 0 6px;
+  margin: 6px 0 0; padding: 0 6px;
   font-size: 11px; color: var(--kc-fg-dim);
 }
 
@@ -348,11 +354,20 @@
 }
 .kc-rr-btn:hover { background: var(--kc-hover); border-color: var(--kc-accent); }
 
-/* 中栏内容宽度（1920 下更舒展） */
-@media (min-width: 1600px) {
-  .kc-msg > .kc-msg-content { max-width: 900px; }
-  .kc-composer, .kc-composer-hint { max-width: 900px; }
+/* ===== v0.7.0 内容概括导航条（消息 minimap，右缘刻度） ===== */
+.kc-nav {
+  position: absolute; top: 10px; bottom: 10px; right: 6px; width: 18px;
+  z-index: 6; pointer-events: none;
 }
+.kc-nav[hidden] { display: none; }
+.kc-nav-tick {
+  position: absolute; right: 0; width: 8px; height: 3px; border-radius: 2px;
+  background: var(--kc-fg-dim); opacity: .38; cursor: pointer; pointer-events: auto;
+  transition: width .15s ease, opacity .15s ease, background .15s ease;
+}
+.kc-nav-tick:hover { width: 14px; opacity: 1; background: var(--kc-accent); }
+.kc-nav-tick.kc-nav-user { background: var(--kc-accent); opacity: .5; }
+.kc-nav-tick.kc-nav-cur { width: 14px; opacity: 1; background: var(--kc-accent); }
 
 /* ===== 思考过程折叠块 ===== */
 .kc-think {

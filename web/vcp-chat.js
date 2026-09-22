@@ -11,7 +11,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.6.2'
+  var VERSION = '0.7.0'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -434,7 +434,10 @@
         '    </header>' +
         '    <div class="kc-body">' +
         '      <div class="kc-col">' +
-        '        <div class="kc-msgs"></div>' +
+        '        <div class="kc-msgs-wrap">' +
+        '          <div class="kc-msgs"></div>' +
+        '          <div class="kc-nav" hidden></div>' +
+        '        </div>' +
         '        <div class="kc-composer-wrap">' +
         '          <div class="kc-composer">' +
         '            <textarea class="kc-input" rows="2" placeholder="讨论点什么… Enter 发送 / Shift+Enter 换行；/img 生图、/tts 语音"></textarea>' +
@@ -500,6 +503,7 @@
       els.chat = root.querySelector('.kc-chat')
       els.chattitle = root.querySelector('.kc-chattitle')
       els.msgs = root.querySelector('.kc-msgs')
+      els.nav = root.querySelector('.kc-nav')
       els.input = root.querySelector('.kc-input')
       els.send = root.querySelector('.kc-send')
       els.stop = root.querySelector('.kc-stop')
@@ -518,6 +522,7 @@
 
       els.search.addEventListener('input', function () { filter = els.search.value.trim().toLowerCase(); renderList() })
       panel.addEventListener('click', onClick)
+      els.msgs.addEventListener('scroll', markNavCur)
       // 聊天区内 VCP 卡片按钮：填入讨论输入框（而非 kimi composer）
       els.msgs.addEventListener('click', function (e) {
         var el = e.target && e.target.closest ? e.target.closest('[onclick^="input("]') : null
@@ -1158,6 +1163,7 @@
       var msgs = (cur && cur.messages) || []
       if (!msgs.length) {
         els.msgs.innerHTML = '<div class="kc-empty">开始讨论吧 —— 可以让我用 HTML / SVG / 图表帮你把问题画出来</div>'
+        markNavDirty()
         return
       }
       msgs.forEach(function (m) { appendMsgEl(m) })
@@ -1187,9 +1193,70 @@
           content.insertBefore(thinkDetails(thinkText, false), content.firstChild)
         }
       }
+      markNavDirty()
       return content
     }
-    function scrollBottom() { els.msgs.scrollTop = els.msgs.scrollHeight }
+    function scrollBottom() { els.msgs.scrollTop = els.msgs.scrollHeight; markNavDirty() }
+
+    // ---- 内容概括导航条（右缘 minimap 刻度：按比例定位，点击跳转，悬停看概括） ----
+    var navDirty = false
+    function tickSummary(row) {
+      var h = row.querySelector('.kc-msg-content .kc-h')
+      var t = h ? h.textContent : ''
+      if (!t) {
+        var c = row.querySelector('.kc-msg-content')
+        t = c ? c.textContent : ''
+        t = t.replace(/💭\s*思考中…（\d+ 字）/g, '').replace(/⏳[^\n]*生成中…/g, '').replace(/▸?\s*思考过程（\d+ 字）/g, '')
+      }
+      t = (t || '').replace(/\s+/g, ' ').trim()
+      return t.length > 36 ? t.slice(0, 36) + '…' : t
+    }
+    function markNavDirty() {
+      if (navDirty) return
+      navDirty = true
+      requestAnimationFrame(updateNav)
+    }
+    function updateNav() {
+      navDirty = false
+      if (!els.nav) return
+      var rows = els.msgs.querySelectorAll('.kc-msg')
+      if (!rows.length || els.chat.hidden) { els.nav.hidden = true; els.nav.innerHTML = ''; return }
+      els.nav.hidden = false
+      var total = Math.max(els.msgs.scrollHeight, 1)
+      var frag = document.createDocumentFragment()
+      rows.forEach(function (row) {
+        var t = document.createElement('div')
+        var isUser = row.classList.contains('kc-msg-user')
+        t.className = 'kc-nav-tick' + (isUser ? ' kc-nav-user' : '')
+        t.style.top = (row.offsetTop / total * 100).toFixed(2) + '%'
+        t.title = (isUser ? '我：' : 'AI：') + (tickSummary(row) || '（空）')
+        t.addEventListener('click', function () {
+          row.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        })
+        frag.appendChild(t)
+      })
+      els.nav.innerHTML = ''
+      els.nav.appendChild(frag)
+      markNavCur()
+    }
+    function markNavCur() {
+      if (!els.nav || els.nav.hidden) return
+      var rows = els.msgs.querySelectorAll('.kc-msg')
+      var ticks = els.nav.children
+      if (rows.length !== ticks.length) return
+      var curIdx = 0
+      // 滚到底部时直接高亮最后一条（末条可能比视口矮，offsetTop 判不到）
+      if (els.msgs.scrollTop + els.msgs.clientHeight >= els.msgs.scrollHeight - 20) {
+        curIdx = rows.length - 1
+      } else {
+        var top = els.msgs.scrollTop
+        for (var i = 0; i < rows.length; i++) {
+          if (rows[i].offsetTop <= top + 24) curIdx = i
+          else break
+        }
+      }
+      for (var j = 0; j < ticks.length; j++) ticks[j].classList.toggle('kc-nav-cur', j === curIdx)
+    }
     // 回读当前话题（自动起名/消息计数变化后刷新标题与右栏）
     function refreshCur() {
       if (!cur) return
