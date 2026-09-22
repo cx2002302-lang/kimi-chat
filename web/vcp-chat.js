@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.7.4'
+  var VERSION = '0.7.5'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -860,10 +860,13 @@
         if (fid && !findFolder(fid)) fid = '' // 文件夹已不存在：按未分组显示
         ;(byFolder[fid] = byFolder[fid] || []).push(t)
       })
-      // 递归计数（含所有后代文件夹里的聊天）
-      function deepCount(fid) {
+      // 递归计数（含所有后代文件夹里的聊天；seen 防手改数据成环导致栈溢出）
+      function deepCount(fid, seen) {
+        seen = seen || {}
+        if (seen[fid]) return 0
+        seen[fid] = true
         var n = (byFolder[fid] || []).length
-        folders.forEach(function (f2) { if (f2.parentId === fid) n += deepCount(f2.id) })
+        folders.forEach(function (f2) { if (f2.parentId === fid) n += deepCount(f2.id, seen) })
         return n
       }
       var sorted = folders.slice().sort(function (a, b) { return String(a.created_at).localeCompare(String(b.created_at)) })
@@ -1458,6 +1461,7 @@
 
     // ---- 内容导航（1:1 复刻 kimi 原生 conversation-toc：一列小竖条，悬停滑出文字标签） ----
     var outlineDirty = false
+    var outlineKey = '' // 话题id:提问数——没变就跳过重建（流式时每 chunk 都会触发，长对话避免整棵重排）
     function outlineText(row) {
       var c = row.querySelector('.kc-msg-content')
       var t = (c ? c.textContent : '').replace(/\s+/g, ' ').trim()
@@ -1478,6 +1482,13 @@
         return
       }
       els.olzone.hidden = false
+      // 结构没变（同一话题、提问数不变——流式中只有 AI 内容在增长）：只刷新当前项，跳过重建
+      var key = (cur && cur.id || '') + ':' + rows.length
+      if (outlineKey === key && els.tocscroll.children.length === rows.length) {
+        markOutlineCur()
+        return
+      }
+      outlineKey = key
       // 每条提问一行：.kc-toc-row > .kc-toc-bar + .kc-toc-label（结构对齐原生 toc-row/toc-bar/toc-label）
       var frag = document.createDocumentFragment()
       rows.forEach(function (row) {
