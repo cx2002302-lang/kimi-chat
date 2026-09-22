@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.7.7'
+  var VERSION = '0.7.8'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -396,7 +396,9 @@
         '    <button class="kc-icon-btn kc-newfolder" data-act="newfolder" title="新建文件夹（可嵌套分组）">📁+</button>' +
         '  </div>' +
         '  <div class="kc-searchwrap"><input class="kc-search" type="text" placeholder="搜索话题 / 文件夹…" spellcheck="false"></div>' +
-        '  <div class="kc-list" role="list">' +
+        '  <div class="kc-listwrap">' +
+        '    <div class="kc-list" role="list"></div>' +
+        // 「移到未分组」悬放条：悬浮在列表顶部的覆盖层（拖拽中途出现不改变布局，DnD 目标不挪位）
         '    <div class="kc-droproot" hidden>⬆ 移到未分组</div>' +
         '  </div>' +
         '  <div class="kc-svcdown" hidden>' +
@@ -490,6 +492,7 @@
         '</div>' +
         // ---- 文件夹菜单（浮层） ----
         '<div class="kc-menu kc-fmenu" hidden>' +
+        '  <button data-fact="newtopic">💬 新建话题（在此文件夹）</button>' +
         '  <button data-fact="newsub">📁 新建子文件夹</button>' +
         '  <button data-fact="rename">✏️ 重命名</button>' +
         '  <button data-fact="delete" class="kc-danger">🗑 删除文件夹（聊天移到上级）</button>' +
@@ -578,29 +581,45 @@
         try { e.dataTransfer.setData('text/plain', dragTopicId); e.dataTransfer.effectAllowed = 'move' } catch (err) {}
         els.list.classList.add('kc-dragging')
         var t = findTopic(dragTopicId)
-        els.droproot.hidden = !(t && t.folder_id)
+        // 必须延后：在 dragstart 里改 droproot 的显示（display:none→block 布局变化）会当场掐死原生 DnD 会话
+        // （dragend 立即触发、之后再也拖不动）——这正是「拖进文件夹后就无法再拖」的根因
+        setTimeout(function () { if (dragTopicId) els.droproot.hidden = !(t && t.folder_id) }, 0)
       })
       els.list.addEventListener('dragend', function () { clearDropHints() })
+      // 悬停在文件夹子话题上 = 投到其所属文件夹（整块文件夹区域都是投放区，不只标题行）
+      function dropZoneOf(target) {
+        var folder = target && target.closest ? target.closest('.kc-folder') : null
+        if (folder) return folder
+        var root0 = target && target.closest ? target.closest('.kc-droproot') : null
+        if (root0) return root0
+        var it = target && target.closest ? target.closest('.kc-item') : null
+        if (it) {
+          var t0 = findTopic(it.getAttribute('data-id'))
+          var fid0 = t0 && t0.folder_id
+          if (fid0 && findFolder(fid0)) return els.list.querySelector('.kc-folder[data-fid="' + fid0 + '"]')
+        }
+        return null
+      }
       els.list.addEventListener('dragover', function (e) {
         if (!dragTopicId) return
-        var folder = e.target && e.target.closest ? e.target.closest('.kc-folder') : null
-        var root0 = e.target && e.target.closest ? e.target.closest('.kc-droproot') : null
-        if (!folder && !root0) return
+        var zone = dropZoneOf(e.target)
+        if (!zone) return
         e.preventDefault()
         try { e.dataTransfer.dropEffect = 'move' } catch (err) {}
         clearDropHints(true)
-        ;(folder || root0).classList.add('kc-drop-on')
+        zone.classList.add('kc-drop-on')
       })
       els.list.addEventListener('drop', function (e) {
         if (!dragTopicId) return
-        var folder = e.target && e.target.closest ? e.target.closest('.kc-folder') : null
-        var root0 = e.target && e.target.closest ? e.target.closest('.kc-droproot') : null
-        if (!folder && !root0) return
+        var zone = dropZoneOf(e.target)
+        if (!zone) return
         e.preventDefault()
-        var fid = folder ? folder.getAttribute('data-fid') : ''
+        var fid = zone.classList.contains('kc-droproot') ? '' : zone.getAttribute('data-fid')
         var tid = dragTopicId
         clearDropHints()
-        moveTopic(tid, fid)
+        // 延后到本轮 DnD 会话彻底结束（dragend 落定）再请求并重渲染：
+        // 立即重渲染会把拖拽源从 DOM 移除，dragend 丢失、原生拖拽会话卡死，之后再也拖不动
+        setTimeout(function () { moveTopic(tid, fid) }, 0)
       })
       // Esc 关闭（设置弹窗优先）
       document.addEventListener('keydown', function (e) {
@@ -800,9 +819,16 @@
       els.fmenu.hidden = true
       var id = menuFolderId
       if (!id) return
-      if (act === 'newsub') createFolder(id)
+      if (act === 'newtopic') createTopicIn(id)
+      else if (act === 'newsub') createFolder(id)
       else if (act === 'rename') renameFolder(id)
       else if (act === 'delete') deleteFolder(id)
+    }
+    // 直接在指定文件夹下新建话题（服务端 POST /api/topics 原生支持 folder_id）
+    function createTopicIn(folderId) {
+      svcJson('/api/topics', { method: 'POST', body: JSON.stringify({ folder_id: folderId }) })
+        .then(function (t) { loadTopics(); openChat(t.id) })
+        .catch(function (e) { toast('创建失败：' + e.message) })
     }
     // 「移动到…」浮层：未分组 + 文件夹树（缩进展示嵌套层级）
     function openMovePop(topicId, anchorBtn) {
@@ -891,7 +917,6 @@
       // 未分组话题：保持原有观感，排在文件夹之后
       ;(byFolder[''] || []).forEach(function (t) { html += topicItemHtml(t, 0) })
       els.list.innerHTML = html
-      els.list.insertBefore(els.droproot, els.list.firstChild) // 拖拽悬放条常驻列表顶部
     }
     // 搜索：标题/预览命中；文件夹名命中时其内聊天（含子文件夹）一并显示（扁平结果）
     function renderSearchList(kw) {
@@ -918,7 +943,6 @@
         html += topicItemHtml(t, 0, f ? '📁 ' + esc(f.name) : '')
       })
       els.list.innerHTML = html
-      els.list.insertBefore(els.droproot, els.list.firstChild)
     }
     function createTopic() {
       svcJson('/api/topics', { method: 'POST', body: '{}' })
