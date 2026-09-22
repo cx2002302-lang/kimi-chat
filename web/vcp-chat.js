@@ -11,7 +11,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.5.4'
+  var VERSION = '0.6.0'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -188,6 +188,22 @@
       if (mol) { flushPara(); if (!list || list.tag !== 'ol') { flushList(); list = { tag: 'ol', items: [] } } list.items.push(mol[1]); continue }
       var mq = /^&gt;\s?(.*)$/.exec(ln)
       if (mq) { flushPara(); flushList(); html += '<blockquote class="kc-q">' + mq[1] + '</blockquote>'; continue }
+      // Markdown 表格：表头行 + 分隔行（|---|---|）触发表格模式
+      if (/^\s*\|.*\|\s*$/.test(ln) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+        flushPara(); flushList()
+        var splitRow = function (row) { return row.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(function (c) { return c.trim() }) }
+        var heads = splitRow(ln)
+        var rows = []
+        i += 2
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(splitRow(lines[i])); i++ }
+        i--
+        html += '<table><thead><tr><th>' + heads.join('</th><th>') + '</th></tr></thead><tbody>'
+        for (var ri = 0; ri < rows.length; ri++) html += '<tr><td>' + rows[ri].join('</td><td>') + '</td></tr>'
+        html += '</tbody></table>'
+        continue
+      }
+      // 分割线
+      if (/^\s*(---+|\*\*\*+)\s*$/.test(ln)) { flushPara(); flushList(); html += '<hr>'; continue }
       if (/^\s*$/.test(ln)) { flushPara(); flushList(); continue }
       para.push(ln)
     }
@@ -341,6 +357,9 @@
     var cur = null // 当前打开的话题（完整对象）
     var busy = false, aborter = null
     var els = {}
+    // 界面偏好（来自服务端 /api/config 的 ui 块，设置页可改）
+    var uiCfg = { card_style: 'editorial', color_mode: 'auto', think_collapse: true, right_rail: true }
+    var railHidden = lsGet('kc.railhidden', '0') === '1'
 
     function build() {
       host = document.createElement('div')
@@ -356,6 +375,10 @@
       klink.rel = 'stylesheet'
       klink.href = '/assets/kimi-chat/vendor/katex.min.css'
       root.appendChild(klink)
+      // 设置表单样式（与注入 kimi 设置页的表单共用）
+      var fstyle = document.createElement('style')
+      fstyle.textContent = KC_FORM_CSS
+      root.appendChild(fstyle)
       var panel = document.createElement('div')
       panel.className = 'kc-module'
       panel.innerHTML =
@@ -385,7 +408,7 @@
         '      <label class="kc-toggle kc-trusted"><input type="checkbox" data-k="trusted"><span class="kc-switch"></span><span class="kc-tlabel">可信模式<em>（允许执行卡片脚本，慎用）</em></span></label>' +
         '    </div>' +
         '    <div class="kc-status"></div>' +
-        '    <div class="kc-ver">kimi-chat v' + VERSION + '</div>' +
+        '    <div class="kc-ver"><button class="kc-setgear" data-act="settings" title="插件设置">⚙️</button> kimi-chat v' + VERSION + '</div>' +
         '  </div>' +
         '</div>' +
         // ---- 主区（复刻会话窗口形态） ----
@@ -398,25 +421,45 @@
         '  </div>' +
         '  <div class="kc-chat" hidden>' +
         '    <header class="kc-chat-head">' +
-        '      <span class="kc-chattitle" title="双击重命名"></span>' +
-        '      <div class="kc-chat-actions">' +
-        '        <button class="kc-hbtn kc-hbtn-primary" data-act="promote" title="以此话题开展一个新的 Kimi Code 会话">⇗ 开展会话</button>' +
-        '        <button class="kc-hbtn" data-act="copyid" title="复制聊天 ID">⧉ 聊天ID</button>' +
-        '        <button class="kc-hbtn" data-act="export" title="导出 Markdown">⤓ 导出</button>' +
-        '        <button class="kc-hbtn" data-act="clear" title="清空消息">🗑 清空</button>' +
+        '      <div class="kc-head-col">' +
+        '        <span class="kc-chattitle" title="双击重命名"></span>' +
+        '        <div class="kc-chat-actions">' +
+        '          <button class="kc-hbtn kc-hbtn-primary" data-act="promote" title="以此话题开展一个新的 Kimi Code 会话">⇗ 开展会话</button>' +
+        '          <button class="kc-hbtn" data-act="copyid" title="复制聊天 ID">⧉ 聊天ID</button>' +
+        '          <button class="kc-hbtn" data-act="export" title="导出 Markdown">⤓ 导出</button>' +
+        '          <button class="kc-hbtn" data-act="clear" title="清空消息">🗑 清空</button>' +
+        '        </div>' +
         '      </div>' +
+        '      <button class="kc-icon-btn kc-rail-toggle" data-act="railtoggle" title="显示/隐藏信息栏">☰</button>' +
         '    </header>' +
-        '    <div class="kc-msgs"></div>' +
-        '    <div class="kc-composer-wrap">' +
-        '      <div class="kc-composer">' +
-        '        <textarea class="kc-input" rows="2" placeholder="讨论点什么… Enter 发送 / Shift+Enter 换行；/img 生图、/tts 语音"></textarea>' +
-        '        <button class="kc-send" data-act="send" title="发送">↑</button>' +
-        '        <button class="kc-stop" data-act="stop" title="停止" hidden>■</button>' +
+        '    <div class="kc-body">' +
+        '      <div class="kc-col">' +
+        '        <div class="kc-msgs"></div>' +
+        '        <div class="kc-composer-wrap">' +
+        '          <div class="kc-composer">' +
+        '            <textarea class="kc-input" rows="2" placeholder="讨论点什么… Enter 发送 / Shift+Enter 换行；/img 生图、/tts 语音"></textarea>' +
+        '            <button class="kc-send" data-act="send" title="发送">↑</button>' +
+        '            <button class="kc-stop" data-act="stop" title="停止" hidden>■</button>' +
+        '          </div>' +
+        '          <div class="kc-composer-hint">' +
+        '            <button class="kc-model-btn" data-act="model" title="选择模型与思考强度（与会话同源）"></button>' +
+        '            <span class="kc-hint-text">可生成 HTML/SVG 视觉辅助 · 编程任务请开会话</span>' +
+        '          </div>' +
+        '        </div>' +
         '      </div>' +
-        '      <div class="kc-composer-hint">' +
-        '        <button class="kc-model-btn" data-act="model" title="选择模型与思考强度（与会话同源）"></button>' +
-        '        <span class="kc-hint-text">可生成 HTML/SVG 视觉辅助 · 编程任务请开会话</span>' +
-        '      </div>' +
+        // ---- 右侧信息栏（复刻会话窗口右栏：信息 / 自动归纳 / 快捷操作） ----
+        '      <aside class="kc-rightrail">' +
+        '        <section class="kc-rr-sec"><h4>话题信息</h4><div class="kc-rr-info"></div></section>' +
+        '        <section class="kc-rr-sec"><h4>自动归纳</h4><div class="kc-rr-outline"></div></section>' +
+        '        <section class="kc-rr-sec"><h4>快捷操作</h4><div class="kc-rr-actions">' +
+        '          <button class="kc-rr-btn" data-act="promote">⇗ 开展会话</button>' +
+        '          <button class="kc-rr-btn" data-act="copyid">⧉ 复制聊天 ID</button>' +
+        '          <button class="kc-rr-btn" data-act="export">⤓ 导出 Markdown</button>' +
+        '          <button class="kc-rr-btn" data-act="imgfill">🎨 生图（填入 /img）</button>' +
+        '          <button class="kc-rr-btn" data-act="ttsfill">🔊 语音（填入 /tts）</button>' +
+        '          <button class="kc-rr-btn" data-act="settings">⚙️ 插件设置</button>' +
+        '        </div></section>' +
+        '      </aside>' +
         '    </div>' +
         '  </div>' +
         '</div>' +
@@ -438,6 +481,14 @@
         '  <div class="kc-mp-efforts"></div>' +
         '  <div class="kc-mp-sec">模型（与会话同源）</div>' +
         '  <div class="kc-mp-models"></div>' +
+        '</div>' +
+        // ---- 插件设置弹窗（与 kimi 设置页里的 kimi-chat 页签共用同一个表单） ----
+        '<div class="kc-setmask" hidden>' +
+        '  <div class="kc-setdlg" role="dialog" aria-label="kimi-chat 设置">' +
+        '    <header class="kc-sethead"><span>⚙️ kimi-chat 设置</span>' +
+        '      <button class="kc-icon-btn" data-act="setclose" title="关闭">✕</button></header>' +
+        '    <div class="kc-setbody"></div>' +
+        '  </div>' +
         '</div>'
       root.appendChild(panel)
       document.body.appendChild(host)
@@ -459,6 +510,11 @@
       els.mpEfforts = root.querySelector('.kc-mp-efforts')
       els.mpEffSec = root.querySelector('.kc-mp-eff-sec')
       els.mpModels = root.querySelector('.kc-mp-models')
+      els.rightrail = root.querySelector('.kc-rightrail')
+      els.rrInfo = root.querySelector('.kc-rr-info')
+      els.rrOutline = root.querySelector('.kc-rr-outline')
+      els.setmask = root.querySelector('.kc-setmask')
+      els.setbody = root.querySelector('.kc-setbody')
 
       els.search.addEventListener('input', function () { filter = els.search.value.trim().toLowerCase(); renderList() })
       panel.addEventListener('click', onClick)
@@ -484,9 +540,11 @@
         if (!els.menu.hidden && !path.some(function (n) { return n === els.menu })) els.menu.hidden = true
         if (!els.modelpop.hidden && !path.some(function (n) { return n === els.modelpop || n === els.modelbtn })) els.modelpop.hidden = true
       })
-      // Esc 关闭
+      // Esc 关闭（设置弹窗优先）
       document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && open) close()
+        if (e.key !== 'Escape' || !open) return
+        if (els.setmask && !els.setmask.hidden) { closeSettings(); return }
+        close()
       })
       // 开关
       Array.prototype.forEach.call(root.querySelectorAll('[data-k]'), function (cb) {
@@ -510,6 +568,7 @@
 
     // ---------- 事件分发 ----------
     function onClick(e) {
+      if (e.target === els.setmask) { closeSettings(); return }
       var actBtn = e.target.closest('[data-act]')
       if (actBtn) {
         var act = actBtn.getAttribute('data-act')
@@ -524,8 +583,23 @@
         else if (act === 'export' && cur) exportTopic(cur.id)
         else if (act === 'clear' && cur) clearTopic(cur.id)
         else if (act === 'model') toggleModelPop()
+        else if (act === 'settings') openSettings()
+        else if (act === 'setclose') closeSettings()
+        else if (act === 'railtoggle') toggleRail()
+        else if (act === 'imgfill') { els.input.value = '/img '; els.input.focus(); autosize() }
+        else if (act === 'ttsfill') { els.input.value = '/tts '; els.input.focus(); autosize() }
         return
       }
+      var saveBtn = e.target.closest('[data-sact]')
+      if (saveBtn) { onSettingsAction(saveBtn.getAttribute('data-sact')); return }
+      var rrQ = e.target.closest('.kc-rr-q')
+      if (rrQ) {
+        var node = els.msgs.children[+rrQ.getAttribute('data-dom')]
+        if (node && node.scrollIntoView) node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        return
+      }
+      var rrC = e.target.closest('[data-copyid]')
+      if (rrC) { copyText(rrC.getAttribute('data-copyid'), '聊天 ID 已复制'); return }
       var effBtn = e.target.closest('[data-eff]')
       if (effBtn) { selectEffort(effBtn.getAttribute('data-eff')); return }
       var mdlBtn = e.target.closest('[data-mdl]')
@@ -565,6 +639,10 @@
         els.svcdown.hidden = true
         els.status.textContent = (h.chat ? h.chat.model : '聊天后端未配置') + (h.image ? ' · 生图✓' : '') + (h.tts ? ' · 语音✓' : '')
         if (h.chat_error) els.status.textContent = '聊天后端异常'
+        // 拉取界面偏好（答复样式/配色/思考折叠/右栏）
+        svcJson('/api/config').then(function (cj) {
+          if (cj && cj.ui) { uiCfg = Object.assign(uiCfg, cj.ui); applyUiCfg() }
+        }).catch(function () {})
         loadTopics()
       })
     }
@@ -810,6 +888,248 @@
       }, 500)
     }
 
+    // ---------- 界面偏好 / 右侧信息栏 ----------
+    function resolveColorMode() {
+      if (uiCfg.color_mode === 'dark' || uiCfg.color_mode === 'light') return uiCfg.color_mode
+      var de = document.documentElement
+      var ds = (de.dataset.colorScheme || de.dataset.theme || '').toLowerCase()
+      if (ds === 'dark' || ds === 'light') return ds
+      if (de.classList && de.classList.contains('dark')) return 'dark'
+      try { return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' } catch (e) { return 'light' }
+    }
+    function applyUiCfg() {
+      var showRail = uiCfg.right_rail && !railHidden
+      if (els.rightrail) els.rightrail.classList.toggle('kc-rr-off', !showRail)
+      var t = root.querySelector('.kc-rail-toggle')
+      if (t) t.classList.toggle('kc-on', !!showRail)
+    }
+    function toggleRail() {
+      railHidden = !railHidden
+      lsSet('kc.railhidden', railHidden ? '1' : '0')
+      applyUiCfg()
+    }
+    // 答复卡片配色：把 VCPColorEngine 调色板作为 CSS 变量挂到消息容器，
+    // 标题/引用/表格/代码等 Markdown 元素的强调色全部跟随所选样式
+    function applyMsgStyle(el) {
+      if (!uiCfg.card_style) return
+      var engine = window.__vcpColor || window.VCPColorEngine
+      if (!engine || typeof engine.generate !== 'function') {
+        // 配色引擎按需加载，就绪后补一次（防首次渲染时序问题）
+        if (!el.__kcStyleWait) {
+          el.__kcStyleWait = true
+          ensureVendor().then(function () { el.__kcStyleWait = false; applyMsgStyle(el) }).catch(function () { el.__kcStyleWait = false })
+        }
+        return
+      }
+      try {
+        var pal = engine.generate({ movement: uiCfg.card_style, mode: resolveColorMode() })
+        var hex = pal.hex || {}
+        for (var k in hex) {
+          if (!Object.prototype.hasOwnProperty.call(hex, k)) continue
+          var kebab = k.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase() })
+          el.style.setProperty('--vcp-' + kebab, hex[k])
+        }
+        el.classList.add('kc-styled')
+      } catch (e) {}
+    }
+    function updateRail() {
+      if (!els.rrInfo) return
+      if (!cur) { els.rrInfo.innerHTML = ''; els.rrOutline.innerHTML = ''; return }
+      var msgs = cur.messages || []
+      var users = 0, ais = 0
+      for (var i = 0; i < msgs.length; i++) { if (msgs[i].role === 'user') users++; else ais++ }
+      var created = cur.created_at ? new Date(cur.created_at).toLocaleString() : '—'
+      els.rrInfo.innerHTML =
+        '<div class="kc-rr-row"><span>标题</span><b>' + esc(cur.title || '（未命名）') + '</b></div>' +
+        '<div class="kc-rr-row"><span>ID</span><b class="kc-rr-mono" title="点击复制" data-copyid="' + esc(cur.id) + '">' + esc(String(cur.id).slice(0, 12)) + '…</b></div>' +
+        '<div class="kc-rr-row"><span>创建</span><b>' + esc(created) + '</b></div>' +
+        '<div class="kc-rr-row"><span>消息</span><b>' + users + ' 问 / ' + ais + ' 答</b></div>' +
+        '<div class="kc-rr-row"><span>模型</span><b>' + esc(cur.model || '默认') + (cur.effort ? ' · ' + esc(cur.effort) : '') + '</b></div>'
+      // 自动归纳：取用户提问作为大纲，点击滚动定位到对应消息
+      var items = []
+      var domIdx = 0
+      for (var j = 0; j < msgs.length; j++) {
+        if (msgs[j].role === 'user') {
+          var txt = String(msgs[j].content || '').replace(/\s+/g, ' ').trim()
+          items.push({ t: txt.slice(0, 42) + (txt.length > 42 ? '…' : ''), dom: domIdx })
+        }
+        domIdx++
+      }
+      if (!items.length) { els.rrOutline.innerHTML = '<div class="kc-rr-empty">提问后自动生成大纲</div>'; return }
+      var h = ''
+      for (var q = 0; q < Math.min(items.length, 12); q++) {
+        h += '<div class="kc-rr-q" data-dom="' + items[q].dom + '" title="' + esc(items[q].t) + '">' + (q + 1) + '. ' + esc(items[q].t) + '</div>'
+      }
+      els.rrOutline.innerHTML = h
+    }
+    // 大纲点击定位 / 信息栏复制 ID（走 onClick 事件委托，元素在 build 后才存在）
+
+    // ---------- 思考过程折叠（不刷屏） ----------
+    // 把 <think>…</think>（含未闭合的流式中间态）与正式回答分离
+    function splitThink(acc) {
+      var think = '', answer = '', rest = acc
+      for (;;) {
+        var a = rest.indexOf('<think>')
+        if (a === -1) { answer += rest; break }
+        answer += rest.slice(0, a)
+        var b = rest.indexOf('</think>', a)
+        if (b === -1) { think += rest.slice(a + 7); rest = ''; break }
+        think += rest.slice(a + 7, b)
+        rest = rest.slice(b + 8)
+      }
+      return { think: think.trim(), answer: answer.trim(), streaming: rest === '' && acc.indexOf('<think>') !== -1 && acc.lastIndexOf('</think>') < acc.lastIndexOf('<think>') }
+    }
+    function thinkDetails(thinkText, live) {
+      var d = document.createElement('details')
+      d.className = 'kc-think'
+      var s = document.createElement('summary')
+      s.innerHTML = '💭 思考过程 <em>' + (live ? '进行中… ' : '') + '(' + thinkText.length + ' 字)</em>'
+      var pre = document.createElement('div')
+      pre.className = 'kc-think-body'
+      pre.textContent = thinkText
+      d.appendChild(s)
+      d.appendChild(pre)
+      return d
+    }
+
+    // ---------- 插件设置（弹窗 + kimi 设置页签共用） ----------
+    var KC_FORM_CSS = '.kc-setform{font-size:13px;line-height:1.5;color:inherit}' +
+      '.kc-setform h5{margin:16px 0 8px;font-size:13px;opacity:.7;border-bottom:1px solid rgba(128,128,128,.25);padding-bottom:4px}' +
+      '.kc-setform .kc-frow{display:flex;align-items:center;gap:8px;margin:6px 0}' +
+      '.kc-setform .kc-frow label{flex:0 0 96px;opacity:.75}' +
+      '.kc-setform input[type=text],.kc-setform input[type=password],.kc-setform select,.kc-setform textarea{flex:1;min-width:0;padding:6px 8px;border:1px solid rgba(128,128,128,.35);border-radius:6px;background:transparent;color:inherit;font:inherit}' +
+      '.kc-setform textarea{min-height:90px;resize:vertical;font-size:12px}' +
+      '.kc-setform .kc-fhint{opacity:.55;font-size:11px;margin-left:104px}' +
+      '.kc-setform .kc-fbtns{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}' +
+      '.kc-setform .kc-fbtns button{padding:7px 14px;border-radius:7px;border:1px solid rgba(128,128,128,.4);background:rgba(128,128,128,.08);color:inherit;cursor:pointer;font:inherit}' +
+      '.kc-setform .kc-fbtns button.kc-fprimary{background:#10a37f;border-color:#10a37f;color:#fff}' +
+      '.kc-setform .kc-fbtns button:hover{filter:brightness(1.08)}' +
+      '.kc-setform .kc-fcheck{flex:0 0 auto;width:16px;height:16px}'
+    var KC_STYLE_OPTS = [['', '原生（不施加主题）'], ['editorial', 'Editorial · 编辑排版'], ['chiaroscuro', 'Chiaroscuro · 明暗油画'], ['fauvism', 'Fauvism · 野兽派'], ['cyberpunk', 'Cyberpunk · 赛博朋克'], ['wabi_sabi', 'Wabi-sabi · 侘寂']]
+    var cfgFormData = null
+    function renderSettingsForm(container) {
+      container.innerHTML = '<div class="kc-setform">加载中…</div>'
+      svcJson('/api/config').then(function (j) {
+        cfgFormData = j
+        var opts = ''
+        for (var i = 0; i < KC_STYLE_OPTS.length; i++) {
+          opts += '<option value="' + KC_STYLE_OPTS[i][0] + '"' + (j.ui.card_style === KC_STYLE_OPTS[i][0] ? ' selected' : '') + '>' + KC_STYLE_OPTS[i][1] + '</option>'
+        }
+        container.innerHTML =
+          '<div class="kc-setform">' +
+          '<h5>界面</h5>' +
+          '<div class="kc-frow"><label>答复样式</label><select data-f="card_style">' + opts + '</select></div>' +
+          '<div class="kc-frow"><label>配色模式</label><select data-f="color_mode">' +
+            '<option value="auto"' + (j.ui.color_mode === 'auto' ? ' selected' : '') + '>跟随 kimi web</option>' +
+            '<option value="light"' + (j.ui.color_mode === 'light' ? ' selected' : '') + '>浅色</option>' +
+            '<option value="dark"' + (j.ui.color_mode === 'dark' ? ' selected' : '') + '>深色</option></select></div>' +
+          '<div class="kc-frow"><label>思考折叠</label><input class="kc-fcheck" type="checkbox" data-f="think_collapse"' + (j.ui.think_collapse ? ' checked' : '') + '><span class="kc-fhint2">思考过程收进折叠块，不刷屏</span></div>' +
+          '<div class="kc-frow"><label>右侧信息栏</label><input class="kc-fcheck" type="checkbox" data-f="right_rail"' + (j.ui.right_rail ? ' checked' : '') + '><span class="kc-fhint2">话题信息 / 自动归纳 / 快捷操作</span></div>' +
+          '<h5>生图（image provider）</h5>' +
+          '<div class="kc-frow"><label>Base URL</label><input type="text" data-f="image.base_url" value="' + esc(j.image.base_url || '') + '"></div>' +
+          '<div class="kc-frow"><label>API Key</label><input type="password" data-f="image.api_key" placeholder="' + (j.image.api_key_set ? '已配置（' + esc(j.image.api_key_mask) + '），留空保持不变' : '未配置') + '"></div>' +
+          '<div class="kc-frow"><label>模型</label><input type="text" data-f="image.model" value="' + esc(j.image.model || '') + '"></div>' +
+          '<div class="kc-frow"><label>接口路径</label><input type="text" data-f="image.path" value="' + esc(j.image.path || '') + '"></div>' +
+          '<h5>语音 TTS（tts provider）</h5>' +
+          '<div class="kc-frow"><label>Base URL</label><input type="text" data-f="tts.base_url" value="' + esc(j.tts.base_url || '') + '"></div>' +
+          '<div class="kc-frow"><label>API Key</label><input type="password" data-f="tts.api_key" placeholder="' + (j.tts.api_key_set ? '已配置（' + esc(j.tts.api_key_mask) + '），留空保持不变' : '未配置') + '"></div>' +
+          '<div class="kc-frow"><label>模型</label><input type="text" data-f="tts.model" value="' + esc(j.tts.model || '') + '"></div>' +
+          '<div class="kc-frow"><label>音色</label><input type="text" data-f="tts.voice" value="' + esc(j.tts.voice || '') + '"></div>' +
+          '<div class="kc-frow"><label>接口路径</label><input type="text" data-f="tts.path" value="' + esc(j.tts.path || '') + '"></div>' +
+          '<h5>高级</h5>' +
+          '<div class="kc-frow"><label>聊天模型</label><input type="text" value="' + esc(j.chat.model || '未配置') + '" disabled title="跟随会话默认模型，在 Kimi Code 设置里改"></div>' +
+          '<div class="kc-frow"><label>免 token 登录</label><input class="kc-fcheck" type="checkbox" data-f="auto_token"' + (j.auto_token ? ' checked' : '') + '><span class="kc-fhint2">统一入口自动注入当前 token（内网建议开）</span></div>' +
+          '<div class="kc-frow"><label>系统提示词</label></div>' +
+          '<textarea data-f="system_prompt">' + esc(j.system_prompt || '') + '</textarea>' +
+          '<div class="kc-fbtns">' +
+          '  <button class="kc-fprimary" data-sact="save">保存</button>' +
+          '  <button data-sact="testimg">生图测试</button>' +
+          '  <button data-sact="testtts">语音测试</button>' +
+          '  <button data-sact="resetprompt">恢复默认提示词</button>' +
+          '</div>' +
+          '</div>'
+      }).catch(function (e) {
+        container.innerHTML = '<div class="kc-setform">加载失败：' + esc(e.message) + '</div>'
+      })
+    }
+    function collectSettings(container) {
+      var out = { image: {}, tts: {}, ui: {} }
+      Array.prototype.forEach.call(container.querySelectorAll('[data-f]'), function (inp) {
+        var f = inp.getAttribute('data-f')
+        var v = inp.type === 'checkbox' ? inp.checked : inp.value
+        if (f === 'card_style' || f === 'color_mode') out.ui[f] = v
+        else if (f === 'think_collapse' || f === 'right_rail') out.ui[f] = !!v
+        else if (f === 'auto_token') out.auto_token = !!v
+        else if (f === 'system_prompt') { if (String(v).trim()) out.system_prompt = v }
+        else if (f.indexOf('image.') === 0) { if (v !== '') out.image[f.slice(6)] = v }
+        else if (f.indexOf('tts.') === 0) { if (v !== '') out.tts[f.slice(4)] = v }
+      })
+      return out
+    }
+    function onSettingsAction(act) {
+      if (act === 'save') {
+        var body = collectSettings(els.setbody)
+        svcJson('/api/config', { method: 'PUT', body: JSON.stringify(body) }).then(function () {
+          uiCfg = Object.assign(uiCfg, body.ui)
+          applyUiCfg()
+          if (cur) renderMessages()
+          toast('设置已保存并生效')
+        }).catch(function (e) { toast('保存失败：' + e.message) })
+      } else if (act === 'testimg') {
+        toast('生图测试中…（约十几秒）')
+        svcJson('/api/image', { method: 'POST', body: JSON.stringify({ prompt: '一只像素风格的橘猫，坐在键盘上', aspect_ratio: '1:1' }) })
+          .then(function (j) { toast('生图成功：' + j.url); window.open(svcUrl(j.url), '_blank') })
+          .catch(function (e) { toast('生图失败：' + e.message) })
+      } else if (act === 'testtts') {
+        toast('语音测试中…')
+        svcJson('/api/tts', { method: 'POST', body: JSON.stringify({ text: '你好，这是 kimi-chat 的语音测试。' }) })
+          .then(function (j) { toast('语音成功'); try { new Audio(svcUrl(j.url)).play() } catch (e) {} })
+          .catch(function (e) { toast('语音失败：' + e.message) })
+      } else if (act === 'resetprompt') {
+        var ta = els.setbody.querySelector('[data-f="system_prompt"]')
+        if (ta) ta.value = ''
+        toast('已清空，保存后恢复默认提示词')
+      }
+    }
+    function openSettings() {
+      els.setmask.hidden = false
+      renderSettingsForm(els.setbody)
+    }
+    function closeSettings() { els.setmask.hidden = true }
+
+    // ---------- kimi 设置页注入「kimi-chat」页签 ----------
+    // kimi web 设置弹窗本身不支持插件注册页，这里用 DOM 注入一个页签（宿主重渲染时自动补回）
+    var KC_TAB_MARK = 'kc-settings-tab'
+    function ensureKimiTab() {
+      var list = document.querySelector('.settings-tab-list')
+      if (!list || document.getElementById(KC_TAB_MARK)) return
+      if (!document.getElementById('kc-set-style')) {
+        var st = document.createElement('style')
+        st.id = 'kc-set-style'
+        st.textContent = KC_FORM_CSS
+        ;(document.head || document.documentElement).appendChild(st)
+      }
+      var btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'tab'
+      btn.id = KC_TAB_MARK
+      btn.setAttribute('role', 'tab')
+      btn.setAttribute('aria-selected', 'false')
+      btn.innerHTML = '<span style="margin-right:6px">💬</span><span>kimi-chat</span>'
+      btn.addEventListener('click', function () {
+        var tabs = list.querySelectorAll('.tab')
+        Array.prototype.forEach.call(tabs, function (t) { t.setAttribute('aria-selected', t === btn ? 'true' : 'false') })
+        var body = list.closest('.sd') && list.closest('.sd').querySelector('.ui-dialog__body > :not(nav)')
+        var content = body || (list.parentElement && list.parentElement.nextElementSibling)
+        if (!content) return
+        content.innerHTML = '<div style="padding:4px 8px;overflow:auto;max-height:60vh"></div>'
+        renderSettingsForm(content.firstChild)
+      })
+      list.appendChild(btn)
+    }
+    var kimiTabObs = new MutationObserver(function () { ensureKimiTab() })
+    try { kimiTabObs.observe(document.body, { childList: true, subtree: true }) } catch (e) {}
+
     // ---------- 聊天视图 ----------
     function openChat(id) {
       svcJson('/api/topics/' + id).then(function (t) {
@@ -817,6 +1137,7 @@
         els.welcome.hidden = true
         els.chat.hidden = false
         els.chattitle.textContent = t.title || '（未命名）'
+        applyUiCfg()
         renderMessages()
         loadModels().then(updateModelBtn)
         setTimeout(function () { els.input.focus() }, 60)
@@ -838,6 +1159,7 @@
         return
       }
       msgs.forEach(function (m) { appendMsgEl(m) })
+      updateRail()
       scrollBottom()
     }
     function appendMsgEl(m) {
@@ -850,9 +1172,32 @@
       row.appendChild(content)
       els.msgs.appendChild(row)
       renderInto(content, m)
+      if (m.role === 'assistant') {
+        applyMsgStyle(content)
+        // 思考内容折叠展示（历史消息的 think 混在 content 里，流式结束后显式传入）
+        var thinkText = m.think || ''
+        if (!thinkText && m.content && m.content.indexOf('<think>') !== -1) {
+          var sp = splitThink(m.content)
+          thinkText = sp.think
+          if (thinkText) renderInto(content, { role: 'assistant', content: sp.answer || '（见思考过程）' })
+        }
+        if (thinkText && uiCfg.think_collapse) {
+          content.insertBefore(thinkDetails(thinkText, false), content.firstChild)
+        }
+      }
       return content
     }
     function scrollBottom() { els.msgs.scrollTop = els.msgs.scrollHeight }
+    // 回读当前话题（自动起名/消息计数变化后刷新标题与右栏）
+    function refreshCur() {
+      if (!cur) return
+      svcJson('/api/topics/' + cur.id).then(function (t) {
+        cur = t
+        els.chattitle.textContent = t.title || '（未命名）'
+        updateRail()
+        loadTopics()
+      }).catch(function () {})
+    }
     function setBusy(v) {
       busy = v
       els.send.hidden = v
@@ -875,6 +1220,17 @@
       scrollBottom()
 
       var acc = ''
+      var thinkAcc = '' // 独立 reasoning 流（服务端 think 事件）
+      // 流式显示：思考只报字数；围栏代码/vcp 源不刷屏，用占位提示代替
+      function streamDisplay() {
+        if (!uiCfg.think_collapse) { aiEl.textContent = acc; return }
+        var sp = splitThink(acc)
+        var thinkLen = thinkAcc.length + sp.think.length
+        var answer = sp.answer.replace(/```(\w*)[\s\S]*?(```|$)/g, function (m, lang) {
+          return '\n⏳ ' + (lang === 'vcp' ? '卡片' : '代码') + '生成中…\n'
+        })
+        aiEl.textContent = (thinkLen ? '💭 思考中…（' + thinkLen + ' 字）\n\n' : '') + answer
+      }
       aborter = new AbortController()
       svcReady.then(function () {
       return fetch(SVC + '/api/topics/' + cur.id + '/chat', {
@@ -901,7 +1257,12 @@
               var j
               try { j = JSON.parse(payload) } catch (e) { continue }
               if (j.error) { acc += '\n\n> ⚠️ ' + j.error; aiEl.textContent = acc; scrollBottom(); continue }
-              if (j.delta) { acc += j.delta; aiEl.textContent = acc; scrollBottom() }
+              if (j.think) { thinkAcc += j.think; streamDisplay(); scrollBottom(); continue }
+              if (j.delta) {
+                acc += j.delta
+                streamDisplay()
+                scrollBottom()
+              }
               if (j.done && j.title) {
                 cur.title = j.title
                 els.chattitle.textContent = j.title
@@ -917,10 +1278,18 @@
       }).then(function () {
         aborter = null
         setBusy(false)
-        // 流式期间是纯文本，结束后做一次完整 Markdown/VCP 渲染
-        var clean = acc.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim()
+        // 流式期间是纯文本，结束后做一次完整 Markdown/VCP 渲染；思考内容折叠
+        var sp = splitThink(acc)
+        var clean = sp.answer || acc.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim()
         renderInto(aiEl, { role: 'assistant', content: clean || acc })
+        applyMsgStyle(aiEl)
+        var thinkAll = (thinkAcc + (thinkAcc && sp.think ? '\n' : '') + sp.think).trim()
+        if (thinkAll && uiCfg.think_collapse) {
+          aiEl.insertBefore(thinkDetails(thinkAll, false), aiEl.firstChild)
+        }
         aiEl.classList.remove('kc-streaming')
+        // 服务端已落盘并自动起名，回读话题刷新右栏（自动归纳/消息计数）
+        refreshCur()
         scrollBottom()
       })
     }
@@ -947,6 +1316,7 @@
         renderInto(aiEl, { role: 'assistant', content: '⚠️ 图像生成失败：' + e.message })
       }).then(function () {
         setBusy(false)
+        refreshCur()
         scrollBottom()
       })
     }
@@ -972,6 +1342,7 @@
         renderInto(aiEl, { role: 'assistant', content: '⚠️ 语音生成失败：' + e.message })
       }).then(function () {
         setBusy(false)
+        refreshCur()
         scrollBottom()
       })
     }

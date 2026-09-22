@@ -25,7 +25,7 @@ const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.5.4'
+const VERSION = '0.6.0'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -38,7 +38,7 @@ const CLI_CRED_FILE = path.join(HOME, 'credentials', 'kimi-code.json')
 const DEFAULT_PORT = 58931
 const MAX_BODY = 1024 * 1024
 const MAX_CONTEXT_MSGS = 40 // 送入模型的最近消息条数
-const MAX_REPLY_TOKENS = 4096
+const MAX_REPLY_TOKENS = 8192
 
 // ---------- 配置 ----------
 const DEFAULT_CONFIG = {
@@ -57,6 +57,14 @@ const DEFAULT_CONFIG = {
     path: '/v1/t2a_v2'
   },
   port: DEFAULT_PORT,
+  // ---- 界面偏好（配置页可改；assistant 答复卡片样式/配色、思考折叠、右栏） ----
+  ui: {
+    card_style: 'editorial',   // ''=原生 / editorial / chiaroscuro / fauvism / cyberpunk / wabi_sabi
+    color_mode: 'auto',        // light / dark / auto（跟随 kimi web 主题）
+    think_collapse: true,      // 思考过程折叠，不刷屏
+    right_rail: true           // 聊天右侧信息栏（≥1500px 时显示）
+  },
+  auto_token: true,            // 统一入口自动注入当前 token（false 则需手动带 #token=）
   // ---- 聊天后端：默认跟随 Kimi Code CLI 的 default_model（与会话同源） ----
   // 如需指定别的 OpenAI 兼容端点，填 chat_base_url（+ chat_api_key/chat_model）即可覆盖
   chat_base_url: '',
@@ -64,12 +72,15 @@ const DEFAULT_CONFIG = {
   chat_model: '',
   system_prompt:
     '你是「kimi-chat」讨论助手，运行在用户的 Kimi Code Web UI 里。你的职责是**讨论问题**，不是写代码干活' +
-    '（编程任务用户会去开会话）。回答使用中文（除非用户用其他语言），用 Markdown 格式。' +
-    '你特别擅长用视觉化的方式帮助用户理解问题：当内容适合用图形展示时，主动输出 ```vcp 围栏代码块——' +
+    '（编程任务用户会去开会话）。回答使用中文（除非用户用其他语言）。' +
+    '【排版要求】不要输出一整面素文本。默认用 Markdown，但要有结构感：' +
+    '先给一两句结论，再用「## 小节标题 + 要点列表」组织主体；重点数字、术语、结论用 **加粗**；' +
+    '对比类内容优先用 Markdown 表格；引用他人观点或补充说明用 > 引用块。' +
+    '【视觉化】你特别擅长用图形帮助用户理解：当内容适合用图形展示时，主动输出 ```vcp 围栏代码块——' +
     '里面是正常的 HTML/SVG（可带内联 style 和 <style>，根元素 id 用 vcp-root 开头），' +
     '可以用来画示意图、流程图、结构对比、数据卡片；支持 KaTeX 公式（$$...$$）和 mermaid 图表' +
     '（<pre class="language-mermaid">）；还可以放 <button onclick="input(\'文字\')"> 按钮让用户一键追问。' +
-    '解释概念、分析架构、对比方案时优先考虑用图辅助；纯闲聊或简单问答用 Markdown 即可。'
+    '解释概念、分析架构、对比方案时优先考虑用图辅助；纯闲聊或简单问答可以简短。'
 }
 let cfgCache = { at: 0, data: null }
 function loadConfig() {
@@ -89,6 +100,7 @@ function loadConfig() {
     const data = Object.assign({}, DEFAULT_CONFIG, j)
     data.image = Object.assign({}, DEFAULT_CONFIG.image, j.image)
     data.tts = Object.assign({}, DEFAULT_CONFIG.tts, j.tts)
+    data.ui = Object.assign({}, DEFAULT_CONFIG.ui, j.ui)
     cfgCache = { at: st.mtimeMs, data }
     return data
   } catch {
@@ -420,9 +432,11 @@ async function handleChat(req, res, id, body) {
         let j
         try { j = JSON.parse(payload) } catch { continue }
         const delta = j && j.choices && j.choices[0] && j.choices[0].delta
-        // 只取正文；reasoning/think 内容不进消息流
+        // 正文进消息流；reasoning 单独以 think 事件转发（前端折叠展示，不落盘）
         const piece = delta && delta.content
         if (piece) { full += piece; sseSend(res, { delta: piece }) }
+        const reasoning = delta && (delta.reasoning_content || delta.reasoning)
+        if (reasoning) sseSend(res, { think: reasoning })
       }
     }
   } catch (e) {
@@ -702,6 +716,43 @@ async function route(req, res) {
       }
     })
     return sendJson(res, 200, { default_model: reg.default_model, items })
+  }
+
+  // ---------- 插件配置（设置页用）：GET 脱敏读出 / PUT 合并写回 ----------
+  if (p === '/api/config' && req.method === 'GET') {
+    const cfg = loadConfig()
+    const backend = resolveChatBackend(cfg)
+    const mask = (s) => s ? String(s).slice(0, 6) + '…' + String(s).slice(-4) : ''
+    return sendJson(res, 200, {
+      chat: backend && !backend.error
+        ? { model: backend.model, source: backend.source, override: !!(cfg.chat_base_url || cfg.chat_model) }
+        : { model: null, source: null, error: backend && backend.error },
+      image: { base_url: cfg.image.base_url, model: cfg.image.model, path: cfg.image.path, api_key_set: !!cfg.image.api_key, api_key_mask: mask(cfg.image.api_key) },
+      tts: { base_url: cfg.tts.base_url, model: cfg.tts.model, voice: cfg.tts.voice, path: cfg.tts.path, api_key_set: !!cfg.tts.api_key, api_key_mask: mask(cfg.tts.api_key) },
+      ui: cfg.ui,
+      auto_token: cfg.auto_token !== false,
+      system_prompt: cfg.system_prompt,
+    })
+  }
+  if (p === '/api/config' && req.method === 'PUT') {
+    const j = await readBody(req)
+    let cur
+    try { cur = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) } catch { cur = {} }
+    const pick = (src, keys) => { const o = {}; for (const k of keys) if (src[k] !== undefined && src[k] !== '') o[k] = src[k]; return o }
+    if (j.image && typeof j.image === 'object') cur.image = Object.assign({}, cur.image, pick(j.image, ['base_url', 'api_key', 'model', 'path']))
+    if (j.tts && typeof j.tts === 'object') cur.tts = Object.assign({}, cur.tts, pick(j.tts, ['base_url', 'api_key', 'model', 'voice', 'path']))
+    if (j.ui && typeof j.ui === 'object') cur.ui = Object.assign({}, cur.ui, pick(j.ui, ['card_style', 'color_mode']), {
+      think_collapse: j.ui.think_collapse !== undefined ? !!j.ui.think_collapse : (cur.ui || {}).think_collapse,
+      right_rail: j.ui.right_rail !== undefined ? !!j.ui.right_rail : (cur.ui || {}).right_rail,
+    })
+    if (j.auto_token !== undefined) cur.auto_token = !!j.auto_token
+    if (typeof j.system_prompt === 'string' && j.system_prompt.trim()) cur.system_prompt = j.system_prompt
+    try {
+      fs.mkdirSync(STATE_DIR, { recursive: true })
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(cur, null, 2), { mode: 0o600 })
+    } catch (e) { return sendJson(res, 500, { error: '写入失败：' + e.message }) }
+    cfgCache = { at: 0, data: null } // 立即生效
+    return sendJson(res, 200, { ok: true })
   }
 
   // 图片静态服务

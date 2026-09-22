@@ -18,5 +18,11 @@
   "port": 58931,
   "bind": "",
   "web_port": 0,
-  "auto_token": true
+  "auto_token": true,
+  "ui": {
+    "card_style": "editorial",
+    "color_mode": "auto",
+    "think_collapse": true,
+    "right_rail": true
+  }
 }
