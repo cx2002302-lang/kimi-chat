@@ -214,7 +214,7 @@
 .kc-welcome-new { margin-top: 6px; }
 
 /* 聊天视图（复刻会话窗口：用户右气泡，助手全宽 Markdown） */
-.kc-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.kc-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .kc-chat[hidden] { display: none; }
 .kc-chat-head {
   display: flex; align-items: center; gap: 10px;
@@ -425,10 +425,11 @@
    竖条 3×14px、圆角 999px、蓝色 rgb(26,136,255)、opacity .3（当前条 18px/1）；
    文字 13px、rgba(255,255,255,.56)、max-width 0→220px + opacity 0→1 向右滑出；
    hover 意图延迟 0.25s，动画曲线 cubic-bezier(.16,1,.3,1)；无面板底色/边框/阴影 */
-.kc-ol-zone { width: 26px; flex: none; position: relative; z-index: 8; }
+/* 挂载点：居中 860px 消息栏的右缘（对齐原生——原生 nav 左缘即消息栏右缘，展开向右长进空白画布） */
+.kc-ol-zone { position: absolute; top: 0; bottom: 0; left: calc(50% + 430px); width: 0; z-index: 8; }
 .kc-ol-zone[hidden] { display: none; }
 .kc-toc {
-  position: absolute; top: 50%; left: 6px; transform: translateY(-50%);
+  position: absolute; top: 50%; left: 0; transform: translateY(-50%);
   display: flex; flex-direction: column; justify-content: center;
   max-height: calc(100% - 160px); z-index: 100;
   opacity: .5;
