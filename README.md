@@ -21,13 +21,17 @@ It also embeds the **VCP (Visual Card Protocol)** renderer adapted from [dsh-raw
 
 ## 📸 Screenshots
 
-| 📊 Hand-drawn SVG charts | 🧠 Mind maps |
+| 📊 Hand-drawn SVG charts | 🧠 SVG mind maps |
 |---|---|
 | ![SVG chart](docs/screenshots/01-svg-chart.png) | ![Mind map](docs/screenshots/02-mindmap.png) |
 
-| 📈 Mermaid + KaTeX + interactive buttons | 🎛️ Model & thinking-effort picker |
+| 📈 Mermaid + KaTeX + interactive buttons | 🗂️ Nested topic folders |
 |---|---|
-| ![Mermaid & KaTeX](docs/screenshots/03-mermaid-katex.png) | ![Model picker](docs/screenshots/04-model-picker.png) |
+| ![Mermaid & KaTeX](docs/screenshots/03-mermaid-katex.png) | ![Folders](docs/screenshots/04-folders.png) |
+
+| 🧭 Content navigator (hover to expand) | 💬 Native session look |
+|---|---|
+| ![Navigator](docs/screenshots/05-nav-toc.png) | ![Native look](docs/screenshots/06-native-look.png) |
 
 ## 🚀 Features
 

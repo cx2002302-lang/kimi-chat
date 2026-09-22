@@ -25,9 +25,13 @@ Kimi Code 的会话是用来**写代码**的；kimi-chat 给你一个专门**想
 |---|---|
 | ![SVG 图表](docs/screenshots/01-svg-chart.png) | ![思维导图](docs/screenshots/02-mindmap.png) |
 
-| 📈 Mermaid + KaTeX + 可交互按钮 | 🎛️ 模型与思考强度选择器 |
+| 📈 Mermaid + KaTeX + 可交互按钮 | 🗂️ 嵌套话题文件夹 |
 |---|---|
-| ![Mermaid 与公式](docs/screenshots/03-mermaid-katex.png) | ![模型选择器](docs/screenshots/04-model-picker.png) |
+| ![Mermaid 与公式](docs/screenshots/03-mermaid-katex.png) | ![文件夹](docs/screenshots/04-folders.png) |
+
+| 🧭 内容导航条（悬停展开） | 💬 原生会话观感 |
+|---|---|
+| ![导航条](docs/screenshots/05-nav-toc.png) | ![原生观感](docs/screenshots/06-native-look.png) |
 
 ## 🚀 功能一览
 
