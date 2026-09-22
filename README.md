@@ -36,7 +36,7 @@ It also embeds the **VCP (Visual Card Protocol)** renderer adapted from [dsh-raw
 - A new **「聊天」button** in the Web UI sidebar opens a full-screen module (`#kc-chat` route, survives refresh, `Esc` to exit)
 - Layout mirrors the session window: topic rail on the left, chat area on the right — a **centered 860px column** (kimi-native look) where assistant replies sit flush with user bubbles at any window size or zoom; composer matches the column
 - **Native session look & feel**: palette taken from kimi web's own `--ms-*` colors, Schibsted Grotesk + Noto Sans SC body at 14px/22px, JetBrains Mono code, neutral gray user bubbles, per-message ⧉copy + timestamp meta row; answer styling defaults to plain native (5 VCP presets remain optional in settings)
-- **Content-summary outline** (kimi-native interaction): a slim 26px indicator strip rests at the chat's right edge — dashed rail, per-question ticks, blue position thumb; hover near it and the text outline panel slides out (one right-aligned line per question, active item tinted with side marker, click to jump, follows scrolling); moves away and it hides; auto-hidden on narrow windows
+- **Content navigator — 1:1 replica of kimi web's native conversation-toc** (DOM & styles sampled from the real thing): at the chat's right edge rests a slim 13px strip of vertical bars, one per question (3×14px rounded bars, the active one taller at 18px and solid theme-blue); hover the 75px hot zone and after a 0.25s intent delay text labels slide out (13px, right-aligned, up to 220px wide, native easing `cubic-bezier(0.16,1,0.3,1)`); rows brighten on hover, click to jump and the active marker follows scrolling; auto-hidden on narrow windows
 - **No visible scrollbars** anywhere in the module (scrolling still works) — matches the native calm look
 - **Right info rail**: topic info / auto outline (click to locate) / quick actions; toggleable, auto-hides <1500px
 - Plugin **settings tab** inside kimi web Settings (answer style presets ×5, color mode, think collapse, image/TTS providers, system prompt); thinking streams collapse into a fold instead of flooding the chat
@@ -45,6 +45,7 @@ It also embeds the **VCP (Visual Card Protocol)** renderer adapted from [dsh-raw
 ### ② 🗂️ Topic management (independent from sessions)
 
 - ➕ New / 🔍 search / 📌 pin / ✏️ rename (double-click works too) / 🗑️ delete / 🧹 clear / 🎨 auto icon / ⬇️ export Markdown
+- 📁 **Nested folders**: group topics into multi-level folders — create (📁+), rename, delete (chats move up to the parent, nothing is lost), collapse state persisted; drag a topic in or use the "Move to…" menu; folders show counts; the search box filters by title/preview and matches folder names (showing their contents too). Stored in `~/.kimi-code/kimi-chat/folders.json`
 - Records stored as plain JSON in `~/.kimi-code/kimi-chat/topics/<id>.json` — easy to back up, and agents can `Read` them directly
 - **⇗ 开展会话**: one click opens a real Kimi Code session pre-filled with the topic context — discussion → deep research
 - **⧉ 复制聊天ID / 📋 复制话题引用**: paste the topic ID anywhere to reference it
@@ -129,11 +130,12 @@ node <plugin>/installer/uninstall.cjs   # stop watchdog + restore Web UI
 
 ## 🧪 Tests
 
-110 checks across 6 suites: unit (32) + service (15) + heal (10) + browser regression (14) + security (13) + folder picker (26).
+9 suites, 199 checks, all green: unit (32) + service (25) + heal (10) + browser regression (14) + security (13) + folder picker (26) + v0.7.2 layout (20) + v0.7.3 native look (12) + v0.7.4 folders & navigator (47).
 
 ```bash
 node tests/unit.test.mjs
 NODE_PATH=<playwright node_modules> node tests/regression-browser.cjs
+NODE_PATH=<playwright node_modules> node tests/v074-browser.cjs
 ```
 
 ## 🙏 Acknowledgements

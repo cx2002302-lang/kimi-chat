@@ -25,13 +25,14 @@ const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.7.3'
+const VERSION = '0.7.4'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
 const IMAGES_DIR = path.join(STATE_DIR, 'images')
 const AUDIO_DIR = path.join(STATE_DIR, 'audio')
 const CONFIG_FILE = path.join(STATE_DIR, 'config.json')
+const FOLDERS_FILE = path.join(STATE_DIR, 'folders.json') // 聊天分组文件夹（嵌套树）
 const CLI_CONFIG_FILE = path.join(HOME, 'config.toml')
 const CLI_TOKEN_FILE = path.join(HOME, 'server.token')
 const CLI_CRED_FILE = path.join(HOME, 'credentials', 'kimi-code.json')
@@ -283,6 +284,7 @@ function listTopics() {
       const last = t.messages && t.messages.length ? t.messages[t.messages.length - 1] : null
       out.push({
         id: t.id, title: t.title, icon: t.icon || '', pinned: !!t.pinned,
+        folder_id: t.folder_id || '',
         model: t.model || '', effort: t.effort || '',
         created_at: t.created_at, updated_at: t.updated_at,
         message_count: (t.messages || []).length,
@@ -295,6 +297,42 @@ function listTopics() {
 }
 function stripThink(s) {
   return String(s || '').replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim()
+}
+
+// ---------- 文件夹存储（聊天分组，parentId 支持任意深度嵌套） ----------
+// folders.json 结构：{ items: [{ id, name, parentId, collapsed, created_at, updated_at }] }
+// parentId='' 表示顶层；话题侧用 topic.folder_id 挂载（''=未分组）
+function readFolders() {
+  try {
+    const j = JSON.parse(fs.readFileSync(FOLDERS_FILE, 'utf8'))
+    return Array.isArray(j.items) ? j.items : []
+  } catch { return [] }
+}
+function writeFolders(items) {
+  fs.mkdirSync(STATE_DIR, { recursive: true })
+  const tmp = FOLDERS_FILE + '.tmp'
+  fs.writeFileSync(tmp, JSON.stringify({ items }, null, 2))
+  fs.renameSync(tmp, FOLDERS_FILE) // 原子写
+}
+function newFolderId() {
+  return 'f' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex')
+}
+function findFolder(items, id) {
+  for (let i = 0; i < items.length; i++) if (items[i].id === id) return items[i]
+  return null
+}
+// target 是否为 ancestor 的后代（含自身）：防循环嵌套
+function folderIsDescendant(items, target, ancestor) {
+  let cur = target
+  const seen = {}
+  while (cur) {
+    if (cur === ancestor) return true
+    if (seen[cur]) return false // 已有环，止损
+    seen[cur] = true
+    const f = findFolder(items, cur)
+    cur = f ? f.parentId : ''
+  }
+  return false
 }
 
 // ---------- 生成 provider 上游（通用：base_url + api_key + 路径，兼容 MiniMax 端点格式） ----------
@@ -792,6 +830,10 @@ async function route(req, res) {
       created_at: now, updated_at: now,
       messages: []
     }
+    // 可选：直接创建到某个文件夹内
+    if (typeof body.folder_id === 'string' && body.folder_id && findFolder(readFolders(), body.folder_id)) {
+      t.folder_id = body.folder_id
+    }
     writeTopic(t)
     return sendJson(res, 200, t)
   }
@@ -849,6 +891,13 @@ async function route(req, res) {
       if (typeof body.pinned === 'boolean') t.pinned = body.pinned
       if (typeof body.model === 'string') t.model = body.model.slice(0, 120)
       if (typeof body.effort === 'string') t.effort = body.effort.slice(0, 20)
+      // 分组挂载：''=未分组；非空必须是存在的文件夹
+      if (typeof body.folder_id === 'string') {
+        const fid = body.folder_id
+        if (fid === '') delete t.folder_id
+        else if (findFolder(readFolders(), fid)) t.folder_id = fid
+        else return sendJson(res, 400, { error: '文件夹不存在：' + fid })
+      }
       writeTopic(t)
       return sendJson(res, 200, { ok: true })
     }
@@ -862,6 +911,65 @@ async function route(req, res) {
   if (p === '/api/image' && req.method === 'POST') {
     const body = await readBody(req)
     return handleImage(req, res, body)
+  }
+
+  // ---------- 文件夹 CRUD（聊天分组，嵌套树） ----------
+  if (p === '/api/folders' && req.method === 'GET') {
+    return sendJson(res, 200, { items: readFolders() })
+  }
+  if (p === '/api/folders' && req.method === 'POST') {
+    const body = await readBody(req)
+    const name = String(body.name || '新建文件夹').trim().slice(0, 60) || '新建文件夹'
+    const items = readFolders()
+    const parentId = String(body.parentId || '')
+    if (parentId && !findFolder(items, parentId)) return sendJson(res, 400, { error: '父文件夹不存在' })
+    const now = new Date().toISOString()
+    const f = { id: newFolderId(), name, parentId, collapsed: false, created_at: now, updated_at: now }
+    items.push(f)
+    writeFolders(items)
+    return sendJson(res, 200, f)
+  }
+  const mFolder = /^\/api\/folders\/([A-Za-z0-9_-]+)$/.exec(p)
+  if (mFolder) {
+    const id = mFolder[1]
+    const items = readFolders()
+    const f = findFolder(items, id)
+    if (!f) return sendJson(res, 404, { error: '文件夹不存在' })
+    if (req.method === 'PATCH') {
+      const body = await readBody(req)
+      if (typeof body.name === 'string' && body.name.trim()) f.name = body.name.trim().slice(0, 60)
+      if (typeof body.collapsed === 'boolean') f.collapsed = body.collapsed
+      if (typeof body.parentId === 'string') {
+        const pid = body.parentId
+        if (pid && !findFolder(items, pid)) return sendJson(res, 400, { error: '父文件夹不存在' })
+        // 防循环：不能挂到自己或自己的后代下
+        if (pid && folderIsDescendant(items, pid, id)) return sendJson(res, 400, { error: '不能移动到自身或其子文件夹内' })
+        f.parentId = pid
+      }
+      f.updated_at = new Date().toISOString()
+      writeFolders(items)
+      return sendJson(res, 200, { ok: true })
+    }
+    if (req.method === 'DELETE') {
+      // 不丢聊天：子文件夹上移到父级；其中话题 folder_id 改为父级（顶层则回到未分组）
+      const parent = f.parentId || ''
+      for (const c of items) if (c.parentId === id) { c.parentId = parent; c.updated_at = new Date().toISOString() }
+      writeFolders(items.filter((x) => x.id !== id))
+      ensureDirs()
+      for (const file of fs.readdirSync(TOPICS_DIR)) {
+        if (!file.endsWith('.json')) continue
+        try {
+          const tp = path.join(TOPICS_DIR, file)
+          const t = JSON.parse(fs.readFileSync(tp, 'utf8'))
+          if (t.folder_id === id) {
+            if (parent) t.folder_id = parent
+            else delete t.folder_id
+            writeTopic(t)
+          }
+        } catch { /* 损坏文件跳过 */ }
+      }
+      return sendJson(res, 200, { ok: true })
+    }
   }
 
   if (p === '/api/tts' && req.method === 'POST') {
@@ -904,4 +1012,4 @@ if (require.main === module) {
   start(port)
   console.log('[kimi-chat:service] listening on port ' + (port || loadConfig().port || DEFAULT_PORT))
 }
-module.exports = { start, loadConfig, listTopics, readTopic, writeTopic, stripThink, exportMarkdown, resolveChatBackend, resolveModelBackend, loadCliRegistry, STATE_DIR, CONFIG_FILE, DEFAULT_PORT, VERSION }
+module.exports = { start, loadConfig, listTopics, readTopic, writeTopic, readFolders, writeFolders, stripThink, exportMarkdown, resolveChatBackend, resolveModelBackend, loadCliRegistry, STATE_DIR, CONFIG_FILE, DEFAULT_PORT, VERSION }

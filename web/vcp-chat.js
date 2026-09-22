@@ -1,7 +1,8 @@
 /*!
  * kimi-chat 主模块（Kimi Code Web UI 注入）v0.3.0
  * 功能：① 侧边栏「聊天」按钮 → 全屏「讨论空间」模块（复刻会话窗口形态）
- *       ② 话题管理：新建/搜索/置顶/重命名/删除/清空/生成图标/导出 Markdown
+ *       ② 话题管理：新建/搜索/置顶/重命名/删除/清空/生成图标/导出 Markdown；
+ *          文件夹嵌套分组（拖拽/「移动到…」移入，折叠状态服务端持久化）
  *       ③ 讨论聊天：跟随 Kimi Code CLI 默认模型（本地服务代理，与会话同源），
  *          支持 Markdown / ```vcp HTML/SVG 视觉辅助 / /img 生图 / /tts 语音
  *       ④ 专用功能：开展会话（话题一键转为真实会话）/ 复制聊天ID / 复制引用
@@ -11,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.7.3'
+  var VERSION = '0.7.4'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -390,9 +391,14 @@
         '    <span class="kc-rail-sub">讨论空间</span>' +
         '    <button class="kc-icon-btn kc-rail-close" data-act="close" title="关闭（Esc）">✕</button>' +
         '  </div>' +
-        '  <button class="kc-newtopic" data-act="new">＋ 新建话题</button>' +
-        '  <div class="kc-searchwrap"><input class="kc-search" type="text" placeholder="搜索话题…" spellcheck="false"></div>' +
-        '  <div class="kc-list" role="list"></div>' +
+        '  <div class="kc-rail-btns">' +
+        '    <button class="kc-newtopic" data-act="new">＋ 新建话题</button>' +
+        '    <button class="kc-icon-btn kc-newfolder" data-act="newfolder" title="新建文件夹（可嵌套分组）">📁+</button>' +
+        '  </div>' +
+        '  <div class="kc-searchwrap"><input class="kc-search" type="text" placeholder="搜索话题 / 文件夹…" spellcheck="false"></div>' +
+        '  <div class="kc-list" role="list">' +
+        '    <div class="kc-droproot" hidden>⬆ 移到未分组</div>' +
+        '  </div>' +
         '  <div class="kc-svcdown" hidden>' +
         '    <div class="kc-svcdown-title">连不上本地服务</div>' +
         '    <div class="kc-svcdown-tip">讨论空间需要 kimi-chat 本地服务。<br>' +
@@ -449,8 +455,8 @@
         '          </div>' +
         '        </div>' +
         '        <div class="kc-ol-zone" hidden>' +
-        '          <div class="kc-ol-rail"><div class="kc-ol-line"></div><div class="kc-ol-thumb"></div></div>' +
-        '          <div class="kc-ol-panel"></div>' +
+        // 1:1 复刻原生 conversation-toc：一列小竖条（收起态）→ 悬停 0.25s 后文字标签向右滑出
+        '          <nav class="kc-toc" aria-label="内容大纲"><div class="kc-toc-scroll"></div></nav>' +
         '        </div>' +
         '      </div>' +
         // ---- 右侧信息栏（复刻会话窗口右栏：信息 / 自动归纳 / 快捷操作） ----
@@ -477,10 +483,19 @@
         '  <button data-mact="export">⤓ 导出 Markdown</button>' +
         '  <button data-mact="icon">🎨 生成话题图标</button>' +
         '  <button data-mact="pin">📌 置顶 / 取消置顶</button>' +
+        '  <button data-mact="move">📂 移动到文件夹…</button>' +
         '  <button data-mact="rename">✏️ 重命名</button>' +
         '  <button data-mact="clear">🧹 清空消息</button>' +
         '  <button data-mact="delete" class="kc-danger">🗑 删除话题</button>' +
         '</div>' +
+        // ---- 文件夹菜单（浮层） ----
+        '<div class="kc-menu kc-fmenu" hidden>' +
+        '  <button data-fact="newsub">📁 新建子文件夹</button>' +
+        '  <button data-fact="rename">✏️ 重命名</button>' +
+        '  <button data-fact="delete" class="kc-danger">🗑 删除文件夹（聊天移到上级）</button>' +
+        '</div>' +
+        // ---- 「移动到…」文件夹选择浮层 ----
+        '<div class="kc-menu kc-movepop" hidden></div>' +
         // ---- 模型/思考强度选择浮层 ----
         '<div class="kc-modelpop" hidden>' +
         '  <div class="kc-mp-sec kc-mp-eff-sec">思考强度</div>' +
@@ -507,13 +522,15 @@
       els.chattitle = root.querySelector('.kc-chattitle')
       els.msgs = root.querySelector('.kc-msgs')
       els.olzone = root.querySelector('.kc-ol-zone')
-      els.olrail = root.querySelector('.kc-ol-rail')
-      els.olthumb = root.querySelector('.kc-ol-thumb')
-      els.olpanel = root.querySelector('.kc-ol-panel')
+      els.toc = root.querySelector('.kc-toc')
+      els.tocscroll = root.querySelector('.kc-toc-scroll')
       els.input = root.querySelector('.kc-input')
       els.send = root.querySelector('.kc-send')
       els.stop = root.querySelector('.kc-stop')
-      els.menu = root.querySelector('.kc-menu')
+      els.menu = root.querySelector('.kc-menu:not(.kc-fmenu):not(.kc-movepop)')
+      els.fmenu = root.querySelector('.kc-fmenu')
+      els.movepop = root.querySelector('.kc-movepop')
+      els.droproot = root.querySelector('.kc-droproot')
       els.status = root.querySelector('.kc-status')
       els.modelbtn = root.querySelector('.kc-model-btn')
       els.modelpop = root.querySelector('.kc-modelpop')
@@ -549,7 +566,41 @@
       document.addEventListener('mousedown', function (e) {
         var path = e.composedPath()
         if (!els.menu.hidden && !path.some(function (n) { return n === els.menu })) els.menu.hidden = true
+        if (!els.fmenu.hidden && !path.some(function (n) { return n === els.fmenu })) els.fmenu.hidden = true
+        if (!els.movepop.hidden && !path.some(function (n) { return n === els.movepop })) els.movepop.hidden = true
         if (!els.modelpop.hidden && !path.some(function (n) { return n === els.modelpop || n === els.modelbtn })) els.modelpop.hidden = true
+      })
+      // 话题拖拽分组：拖到文件夹行 / 顶部「移到未分组」条
+      els.list.addEventListener('dragstart', function (e) {
+        var item = e.target && e.target.closest ? e.target.closest('.kc-item') : null
+        if (!item) { e.preventDefault(); return }
+        dragTopicId = item.getAttribute('data-id')
+        try { e.dataTransfer.setData('text/plain', dragTopicId); e.dataTransfer.effectAllowed = 'move' } catch (err) {}
+        els.list.classList.add('kc-dragging')
+        var t = findTopic(dragTopicId)
+        els.droproot.hidden = !(t && t.folder_id)
+      })
+      els.list.addEventListener('dragend', function () { clearDropHints() })
+      els.list.addEventListener('dragover', function (e) {
+        if (!dragTopicId) return
+        var folder = e.target && e.target.closest ? e.target.closest('.kc-folder') : null
+        var root0 = e.target && e.target.closest ? e.target.closest('.kc-droproot') : null
+        if (!folder && !root0) return
+        e.preventDefault()
+        try { e.dataTransfer.dropEffect = 'move' } catch (err) {}
+        clearDropHints(true)
+        ;(folder || root0).classList.add('kc-drop-on')
+      })
+      els.list.addEventListener('drop', function (e) {
+        if (!dragTopicId) return
+        var folder = e.target && e.target.closest ? e.target.closest('.kc-folder') : null
+        var root0 = e.target && e.target.closest ? e.target.closest('.kc-droproot') : null
+        if (!folder && !root0) return
+        e.preventDefault()
+        var fid = folder ? folder.getAttribute('data-fid') : ''
+        var tid = dragTopicId
+        clearDropHints()
+        moveTopic(tid, fid)
       })
       // Esc 关闭（设置弹窗优先）
       document.addEventListener('keydown', function (e) {
@@ -585,6 +636,7 @@
         var act = actBtn.getAttribute('data-act')
         if (act === 'close') close()
         else if (act === 'new') createTopic()
+        else if (act === 'newfolder') createFolder('')
         else if (act === 'refresh') loadTopics()
         else if (act === 'retry') checkAndLoad()
         else if (act === 'send') sendChat()
@@ -603,10 +655,21 @@
       }
       var saveBtn = e.target.closest('[data-sact]')
       if (saveBtn) { onSettingsAction(saveBtn.getAttribute('data-sact')); return }
+      // 文件夹：折叠箭头 / 菜单 / 行点击
+      var caret = e.target.closest('[data-fcaret]')
+      if (caret) { e.stopPropagation(); toggleFolder(caret.getAttribute('data-fcaret')); return }
+      var fmenuBtn = e.target.closest('[data-fmenu]')
+      if (fmenuBtn) { e.stopPropagation(); openFolderMenu(fmenuBtn); return }
+      var factBtn = e.target.closest('[data-fact]')
+      if (factBtn) { onFolderAction(factBtn.getAttribute('data-fact')); return }
+      var mvBtn = e.target.closest('[data-mvto]')
+      if (mvBtn) { els.movepop.hidden = true; moveTopic(moveTopicId, mvBtn.getAttribute('data-mvto')); return }
+      var folderRow = e.target.closest('.kc-folder')
+      if (folderRow) { toggleFolder(folderRow.getAttribute('data-fid')); return }
       var rrQ = e.target.closest('.kc-rr-q')
       if (rrQ) {
         var node = els.msgs.children[+rrQ.getAttribute('data-dom')]
-        if (node && node.scrollIntoView) node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        if (node) jumpToMsg(node)
         return
       }
       var rrC = e.target.closest('[data-copyid]')
@@ -654,7 +717,7 @@
         svcJson('/api/config').then(function (cj) {
           if (cj && cj.ui) { uiCfg = Object.assign(uiCfg, cj.ui); applyUiCfg() }
         }).catch(function () {})
-        loadTopics()
+        loadFolders().then(loadTopics)
       })
     }
     function loadTopics() {
@@ -663,33 +726,192 @@
         renderList()
       }).catch(function (e) { log('话题列表失败:', e.message) })
     }
+    // ---------- 文件夹（嵌套分组，服务端 folders.json 持久化） ----------
+    var folders = []
+    var dragTopicId = null
+    var menuFolderId = null
+    var moveTopicId = null
+    function loadFolders() {
+      return svcJson('/api/folders').then(function (j) {
+        folders = j.items || []
+      }).catch(function () {})
+    }
+    function findFolder(id) {
+      for (var i = 0; i < folders.length; i++) if (folders[i].id === id) return folders[i]
+      return null
+    }
+    function createFolder(parentId) {
+      var name = window.prompt(parentId ? '子文件夹名称：' : '文件夹名称：', '')
+      if (!name || !name.trim()) return
+      svcJson('/api/folders', { method: 'POST', body: JSON.stringify({ name: name.trim(), parentId: parentId || '' }) })
+        .then(function () { return loadFolders() }).then(renderList)
+        .catch(function (e) { toast('创建文件夹失败：' + e.message) })
+    }
+    function renameFolder(id) {
+      var f = findFolder(id) || {}
+      var name = window.prompt('文件夹名称：', f.name || '')
+      if (!name || !name.trim()) return
+      svcJson('/api/folders/' + id, { method: 'PATCH', body: JSON.stringify({ name: name.trim() }) })
+        .then(function () { return loadFolders() }).then(renderList)
+        .catch(function (e) { toast('重命名失败：' + e.message) })
+    }
+    function deleteFolder(id) {
+      var f = findFolder(id) || {}
+      if (!window.confirm('删除文件夹「' + (f.name || id) + '」？其中的聊天与子文件夹会上移到父级，不会被删除。')) return
+      svcJson('/api/folders/' + id, { method: 'DELETE' })
+        .then(function () { toast('已删除文件夹'); return loadFolders() })
+        .then(function () { loadTopics() })
+        .catch(function (e) { toast('删除失败：' + e.message) })
+    }
+    function toggleFolder(id) {
+      var f = findFolder(id)
+      if (!f) return
+      f.collapsed = !f.collapsed // 先本地翻转秒响应，再落服务端
+      renderList()
+      svcJson('/api/folders/' + id, { method: 'PATCH', body: JSON.stringify({ collapsed: f.collapsed }) })
+        .catch(function (e) { toast('折叠状态保存失败：' + e.message) })
+    }
+    function moveTopic(id, folderId) {
+      svcJson('/api/topics/' + id, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId || '' }) })
+        .then(function () { loadTopics(); toast(folderId ? '已移入文件夹' : '已移到未分组') })
+        .catch(function (e) { toast('移动失败：' + e.message) })
+    }
+    function clearDropHints(keep) {
+      if (!keep) { dragTopicId = null; els.list.classList.remove('kc-dragging'); els.droproot.hidden = true }
+      var on = els.list.querySelectorAll('.kc-drop-on')
+      for (var i = 0; i < on.length; i++) on[i].classList.remove('kc-drop-on')
+    }
+    function openFolderMenu(btn) {
+      menuFolderId = btn.getAttribute('data-fmenu')
+      var br = btn.getBoundingClientRect()
+      var hr = host.getBoundingClientRect()
+      els.fmenu.style.top = Math.min(br.bottom + 2, hr.height - 160) + 'px'
+      els.fmenu.style.left = Math.max(br.left - 150, 8) + 'px'
+      els.fmenu.hidden = false
+    }
+    function onFolderAction(act) {
+      els.fmenu.hidden = true
+      var id = menuFolderId
+      if (!id) return
+      if (act === 'newsub') createFolder(id)
+      else if (act === 'rename') renameFolder(id)
+      else if (act === 'delete') deleteFolder(id)
+    }
+    // 「移动到…」浮层：未分组 + 文件夹树（缩进展示嵌套层级）
+    function openMovePop(topicId, anchorBtn) {
+      moveTopicId = topicId
+      var html = '<button data-mvto="">📥 未分组</button>'
+      var sorted = folders.slice().sort(function (a, b) { return String(a.created_at).localeCompare(String(b.created_at)) })
+      var walk = function (pid, depth) {
+        sorted.forEach(function (f) {
+          if ((f.parentId || '') !== pid) return
+          html += '<button data-mvto="' + esc(f.id) + '" style="padding-left:' + (10 + depth * 16) + 'px">' +
+            '<span class="kc-mv-icon">' + (depth ? '└ ' : '') + '📁</span>' + esc(f.name) + '</button>'
+          walk(f.id, depth + 1)
+        })
+      }
+      walk('', 0)
+      els.movepop.innerHTML = html
+      var br = anchorBtn.getBoundingClientRect()
+      var hr = host.getBoundingClientRect()
+      els.movepop.style.top = Math.min(br.top, hr.height - Math.min(40 + folders.length * 32, 400)) + 'px'
+      els.movepop.style.left = Math.max(br.left - 150, 8) + 'px'
+      els.movepop.style.maxHeight = '380px'
+      els.movepop.hidden = false
+    }
     function iconHtml(t) {
       if (t.icon && t.icon.charAt(0) === '/') return '<img class="kc-item-icon-img" src="' + esc(svcUrl(t.icon)) + '" alt="">'
       return '<span class="kc-item-icon-emoji">' + esc(t.icon || '💬') + '</span>'
     }
+    function topicItemHtml(t, depth, inf) {
+      return '<div class="kc-item" data-id="' + esc(t.id) + '" role="listitem" tabindex="0" draggable="true"' +
+        (depth ? ' style="margin-left:' + depth * 18 + 'px"' : '') + '>' +
+        '<div class="kc-item-icon">' + iconHtml(t) + '</div>' +
+        '<div class="kc-item-body">' +
+        '  <div class="kc-item-title">' + (t.pinned ? '<span class="kc-pin">📌</span>' : '') + esc(t.title || '（未命名）') + '</div>' +
+        '  <div class="kc-item-meta">' + relTime(t.updated_at) + ' · ' + (t.message_count || 0) + ' 条' +
+        (inf ? ' · ' + inf : '') + '</div>' +
+        (t.preview ? '<div class="kc-item-preview">' + esc(t.preview) + '</div>' : '') +
+        '</div>' +
+        '<button class="kc-item-menu" title="更多操作">⋯</button>' +
+        '</div>'
+    }
+    // 文件夹行：折叠箭头 + 📁 + 名称 + 聊天数（含子文件夹递归） + ⋯菜单
+    function folderRowHtml(f, depth, count) {
+      return '<div class="kc-folder' + (f.collapsed ? ' kc-folded' : '') + '" data-fid="' + esc(f.id) + '"' +
+        (depth ? ' style="margin-left:' + depth * 18 + 'px"' : '') + '>' +
+        '<button class="kc-folder-caret" data-fcaret="' + esc(f.id) + '" title="折叠/展开">' + (f.collapsed ? '▸' : '▾') + '</button>' +
+        '<span class="kc-folder-icon">📁</span>' +
+        '<span class="kc-folder-name">' + esc(f.name) + '</span>' +
+        '<span class="kc-folder-count">' + count + '</span>' +
+        '<button class="kc-item-menu kc-folder-menu-btn" data-fmenu="' + esc(f.id) + '" title="文件夹操作">⋯</button>' +
+        '</div>'
+    }
     function renderList() {
       var kw = filter
+      if (kw) return renderSearchList(kw)
+      if (!topics.length && !folders.length) {
+        els.list.innerHTML = '<div class="kc-empty">还没有话题，点上方「＋ 新建话题」开始</div>'
+        return
+      }
+      var byFolder = {}
+      topics.forEach(function (t) {
+        var fid = t.folder_id || ''
+        if (fid && !findFolder(fid)) fid = '' // 文件夹已不存在：按未分组显示
+        ;(byFolder[fid] = byFolder[fid] || []).push(t)
+      })
+      // 递归计数（含所有后代文件夹里的聊天）
+      function deepCount(fid) {
+        var n = (byFolder[fid] || []).length
+        folders.forEach(function (f2) { if (f2.parentId === fid) n += deepCount(f2.id) })
+        return n
+      }
+      var sorted = folders.slice().sort(function (a, b) { return String(a.created_at).localeCompare(String(b.created_at)) })
+      var html = ''
+      var walked = {}
+      var walk = function (pid, depth) {
+        sorted.forEach(function (f) {
+          if ((f.parentId || '') !== pid || walked[f.id]) return
+          walked[f.id] = true
+          html += folderRowHtml(f, depth, deepCount(f.id))
+          if (!f.collapsed) {
+            ;(byFolder[f.id] || []).forEach(function (t) { html += topicItemHtml(t, depth + 1) })
+            walk(f.id, depth + 1)
+          }
+        })
+      }
+      walk('', 0)
+      // 未分组话题：保持原有观感，排在文件夹之后
+      ;(byFolder[''] || []).forEach(function (t) { html += topicItemHtml(t, 0) })
+      els.list.innerHTML = html
+      els.list.insertBefore(els.droproot, els.list.firstChild) // 拖拽悬放条常驻列表顶部
+    }
+    // 搜索：标题/预览命中；文件夹名命中时其内聊天（含子文件夹）一并显示（扁平结果）
+    function renderSearchList(kw) {
+      var hitFolder = {}
+      var markDesc = function (fid) {
+        hitFolder[fid] = true
+        folders.forEach(function (f) { if (f.parentId === fid && !hitFolder[f.id]) markDesc(f.id) })
+      }
+      folders.forEach(function (f) {
+        if ((f.name || '').toLowerCase().indexOf(kw) !== -1) markDesc(f.id)
+      })
       var filtered = topics.filter(function (t) {
-        if (!kw) return true
+        if (t.folder_id && hitFolder[t.folder_id]) return true
         return ((t.title || '') + ' ' + (t.preview || '')).toLowerCase().indexOf(kw) !== -1
       })
       if (!filtered.length) {
-        els.list.innerHTML = '<div class="kc-empty">' + (topics.length ? '没有匹配的话题' : '还没有话题，点上方「＋ 新建话题」开始') + '</div>'
+        els.list.innerHTML = '<div class="kc-empty">没有匹配的话题</div>'
         return
       }
       var html = ''
       filtered.forEach(function (t) {
-        html += '<div class="kc-item" data-id="' + esc(t.id) + '" role="listitem" tabindex="0">' +
-          '<div class="kc-item-icon">' + iconHtml(t) + '</div>' +
-          '<div class="kc-item-body">' +
-          '  <div class="kc-item-title">' + (t.pinned ? '<span class="kc-pin">📌</span>' : '') + esc(t.title || '（未命名）') + '</div>' +
-          '  <div class="kc-item-meta">' + relTime(t.updated_at) + ' · ' + (t.message_count || 0) + ' 条</div>' +
-          (t.preview ? '<div class="kc-item-preview">' + esc(t.preview) + '</div>' : '') +
-          '</div>' +
-          '<button class="kc-item-menu" title="更多操作">⋯</button>' +
-          '</div>'
+        var f = t.folder_id ? findFolder(t.folder_id) : null
+        // 命中项标注所在文件夹，方便定位
+        html += topicItemHtml(t, 0, f ? '📁 ' + esc(f.name) : '')
       })
       els.list.innerHTML = html
+      els.list.insertBefore(els.droproot, els.list.firstChild)
     }
     function createTopic() {
       svcJson('/api/topics', { method: 'POST', body: '{}' })
@@ -717,6 +939,7 @@
       else if (act === 'export') exportTopic(id)
       else if (act === 'icon') genIcon(id)
       else if (act === 'pin') togglePin(id)
+      else if (act === 'move') { var ab = root.querySelector('.kc-item[data-id="' + id + '"] .kc-item-menu'); openMovePop(id, ab || els.menu) }
       else if (act === 'rename') renameTopic(id)
       else if (act === 'clear') clearTopic(id)
       else if (act === 'delete') deleteTopic(id)
@@ -1228,8 +1451,12 @@
       return content
     }
     function scrollBottom() { els.msgs.scrollTop = els.msgs.scrollHeight; markOutlineDirty() }
+    // 跳到某条消息：显式滚消息容器（scrollIntoView 受嵌套滚动容器影响会落点偏差数十像素）
+    function jumpToMsg(el) {
+      els.msgs.scrollTo({ top: Math.max(0, el.offsetTop - 4), behavior: 'smooth' })
+    }
 
-    // ---- 内容概括大纲（复刻 kimi 原生：平时细指示条，悬停滑出文字面板） ----
+    // ---- 内容导航（1:1 复刻 kimi 原生 conversation-toc：一列小竖条，悬停滑出文字标签） ----
     var outlineDirty = false
     function outlineText(row) {
       var c = row.querySelector('.kc-msg-content')
@@ -1247,47 +1474,37 @@
       var rows = els.msgs.querySelectorAll('.kc-msg-user')
       if (!rows.length || els.chat.hidden) {
         els.olzone.hidden = true
-        els.olpanel.innerHTML = ''
-        var old0 = els.olrail.querySelectorAll('.kc-ol-tick')
-        for (var k0 = 0; k0 < old0.length; k0++) old0[k0].remove()
+        els.tocscroll.innerHTML = ''
         return
       }
       els.olzone.hidden = false
-      // 文字面板：每条提问一行
+      // 每条提问一行：.kc-toc-row > .kc-toc-bar + .kc-toc-label（结构对齐原生 toc-row/toc-bar/toc-label）
       var frag = document.createDocumentFragment()
       rows.forEach(function (row) {
-        var item = document.createElement('div')
-        item.className = 'kc-ol-item'
-        var span = document.createElement('span')
-        span.textContent = outlineText(row)
-        item.appendChild(span)
+        var item = document.createElement('button')
+        item.type = 'button'
+        item.className = 'kc-toc-row'
+        var bar = document.createElement('span')
+        bar.className = 'kc-toc-bar'
+        var label = document.createElement('span')
+        label.className = 'kc-toc-label'
+        label.textContent = outlineText(row)
+        item.appendChild(bar)
+        item.appendChild(label)
         item.title = outlineText(row)
         item.addEventListener('click', function () {
-          row.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          jumpToMsg(row)
         })
         frag.appendChild(item)
       })
-      els.olpanel.innerHTML = ''
-      els.olpanel.appendChild(frag)
-      // 指示条小刻度：按位置比例排布
-      var old = els.olrail.querySelectorAll('.kc-ol-tick')
-      for (var k = 0; k < old.length; k++) old[k].remove()
-      var total = Math.max(els.msgs.scrollHeight, 1)
-      var tfrag = document.createDocumentFragment()
-      rows.forEach(function (row) {
-        var t = document.createElement('div')
-        t.className = 'kc-ol-tick'
-        t.style.top = (row.offsetTop / total * 100).toFixed(2) + '%'
-        tfrag.appendChild(t)
-      })
-      els.olrail.appendChild(tfrag)
+      els.tocscroll.innerHTML = ''
+      els.tocscroll.appendChild(frag)
       markOutlineCur()
     }
     function markOutlineCur() {
       if (!els.olzone || els.olzone.hidden) return
       var rows = els.msgs.querySelectorAll('.kc-msg-user')
-      var items = els.olpanel.children
-      var ticks = els.olrail.querySelectorAll('.kc-ol-tick')
+      var items = els.tocscroll.children
       if (rows.length !== items.length) return
       var curIdx = 0
       // 滚到底部时直接高亮最后一条（末条可能比视口矮，offsetTop 判不到）
@@ -1300,21 +1517,14 @@
           else break
         }
       }
-      for (var j = 0; j < items.length; j++) items[j].classList.toggle('kc-ol-cur', j === curIdx)
-      for (var m = 0; m < ticks.length; m++) ticks[m].classList.toggle('kc-ol-tick-cur', m === curIdx)
-      // 蓝色当前位置滑块（指示条上的mini滚动位置）
-      var sh = Math.max(els.msgs.scrollHeight, 1)
-      var hpct = Math.max(els.msgs.clientHeight / sh * 100, 4)
-      var tpct = Math.min(els.msgs.scrollTop / sh * 100, 100 - hpct)
-      els.olthumb.style.top = tpct.toFixed(2) + '%'
-      els.olthumb.style.height = hpct.toFixed(2) + '%'
-      // 面板自身滚动，保持当前项可见（手动算，避免 scrollIntoView 误滚消息区）
+      for (var j = 0; j < items.length; j++) items[j].classList.toggle('kc-toc-cur', j === curIdx)
+      // 大纲自身滚动，保持当前项可见（手动算，避免 scrollIntoView 误滚消息区）
       var cur = items[curIdx]
       if (cur) {
         var ot = cur.offsetTop
-        if (ot < els.olpanel.scrollTop) els.olpanel.scrollTop = ot - 8
-        else if (ot + cur.offsetHeight > els.olpanel.scrollTop + els.olpanel.clientHeight) {
-          els.olpanel.scrollTop = ot + cur.offsetHeight - els.olpanel.clientHeight + 8
+        if (ot < els.tocscroll.scrollTop) els.tocscroll.scrollTop = ot - 8
+        else if (ot + cur.offsetHeight > els.tocscroll.scrollTop + els.tocscroll.clientHeight) {
+          els.tocscroll.scrollTop = ot + cur.offsetHeight - els.tocscroll.clientHeight + 8
         }
       }
     }
