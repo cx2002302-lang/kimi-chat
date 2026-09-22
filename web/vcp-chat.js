@@ -545,6 +545,14 @@
           els.list.innerHTML = ''
           els.svcdown.hidden = false
           els.status.textContent = '服务离线'
+          // 新版 kimi web 的 CSP 禁止跨端口直连，服务本身正常时自动跳到统一入口（保留 token hash）
+          if (location.port !== '58931') {
+            var tip = els.svcdown.querySelector('.kc-svcdown-tip')
+            if (tip) tip.innerHTML = '新版 kimi web 的安全策略（CSP）禁止页面跨端口直连。<br>正在带你跳到统一入口（自动带上 token）…'
+            setTimeout(function () {
+              location.replace(location.protocol + '//' + location.hostname + ':58931/' + location.hash)
+            }, 1200)
+          }
           return
         }
         els.svcdown.hidden = true
