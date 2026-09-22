@@ -186,9 +186,9 @@
   padding: 20px 0 12px;
   display: flex; flex-direction: column;
 }
-/* 消息行 = 共享流动栏：助手卡片拉满栏宽，用户气泡同栏右对齐，两者右缘对齐；随窗口/缩放自适应 */
+/* 消息行 = 居中内容栏（复刻原生居中风格）：助手卡片拉满栏宽，用户气泡同栏右对齐 */
 .kc-msg {
-  display: flex; width: 100%; max-width: 1500px; margin: 0 auto;
+  display: flex; width: 100%; max-width: 860px; margin: 0 auto;
   padding: 5px 24px; box-sizing: border-box;
 }
 .kc-msg > .kc-msg-content { width: 100%; min-width: 0; }
@@ -227,9 +227,9 @@
   color: var(--kc-fg-dim);
 }
 
-/* 底部输入区（与消息栏同一条流动栏，右缘对齐） */
+/* 底部输入区（与消息栏同一条居中栏，右缘对齐） */
 .kc-composer-wrap {
-  width: 100%; max-width: 1500px; margin: 0 auto; box-sizing: border-box;
+  width: 100%; max-width: 860px; margin: 0 auto; box-sizing: border-box;
   padding: 6px 24px 14px;
 }
 .kc-composer {
@@ -354,14 +354,36 @@
 }
 .kc-rr-btn:hover { background: var(--kc-hover); border-color: var(--kc-accent); }
 
-/* ===== v0.7.1 内容概括导航（复刻 kimi 原生：消息区右缘文字大纲栏） ===== */
-.kc-outline {
-  width: 212px; flex: none; box-sizing: border-box;
-  overflow-y: auto; overflow-x: hidden; scrollbar-width: thin;
-  padding: 24px 12px 16px 8px;
-  display: flex; flex-direction: column; gap: 9px;
+/* ===== v0.7.2 内容概括大纲：平时细指示条，悬停滑出文字面板（复刻 kimi 原生） ===== */
+.kc-ol-zone { width: 26px; flex: none; position: relative; z-index: 8; }
+.kc-ol-zone[hidden] { display: none; }
+.kc-ol-rail { position: absolute; top: 12px; bottom: 12px; right: 7px; width: 12px; }
+.kc-ol-line {
+  position: absolute; top: 0; bottom: 0; left: 50%; width: 0;
+  border-left: 1px dashed var(--kc-border);
 }
-.kc-outline[hidden] { display: none; }
+.kc-ol-tick {
+  position: absolute; right: 2px; width: 7px; height: 2px; border-radius: 1px;
+  background: var(--kc-fg-dim); opacity: .35;
+}
+.kc-ol-tick.kc-ol-tick-cur { right: 0; width: 10px; background: var(--kc-accent); opacity: .9; }
+.kc-ol-thumb {
+  position: absolute; right: 4px; width: 4px; min-height: 12px; border-radius: 2px;
+  background: var(--kc-accent); opacity: .8;
+}
+.kc-ol-panel {
+  position: absolute; top: 12px; bottom: 12px; right: 20px; width: 224px;
+  background: var(--kc-bg); border: 1px solid var(--kc-border); border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.22);
+  padding: 12px 12px 12px 8px; box-sizing: border-box;
+  overflow-y: auto; overflow-x: hidden; scrollbar-width: thin;
+  display: flex; flex-direction: column; gap: 9px;
+  opacity: 0; transform: translateX(10px); pointer-events: none;
+  transition: opacity .16s ease .25s, transform .16s ease .25s;
+}
+.kc-ol-zone:hover .kc-ol-panel {
+  opacity: 1; transform: none; pointer-events: auto; transition-delay: 0s;
+}
 .kc-ol-item {
   position: relative; text-align: right; cursor: pointer;
   font-size: 12px; line-height: 1.45; color: var(--kc-fg-dim);
@@ -377,7 +399,13 @@
   content: ''; position: absolute; left: 0; top: 3px; bottom: 3px; width: 2px;
   border-radius: 1px; background: var(--kc-accent);
 }
-@media (max-width: 1100px) { .kc-outline { display: none; } }
+@media (max-width: 1100px) { .kc-ol-zone { display: none; } }
+
+/* ===== v0.7.2 隐藏滚动条（滚动照常可用，视觉不突兀，对齐原生） ===== */
+.kc-msgs, .kc-ol-panel, .kc-rightrail, .kc-list, .kc-rr-outline { scrollbar-width: none; }
+.kc-msgs::-webkit-scrollbar, .kc-ol-panel::-webkit-scrollbar,
+.kc-rightrail::-webkit-scrollbar, .kc-list::-webkit-scrollbar,
+.kc-rr-outline::-webkit-scrollbar { display: none; }
 
 /* ===== 思考过程折叠块 ===== */
 .kc-think {

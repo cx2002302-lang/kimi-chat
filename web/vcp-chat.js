@@ -11,7 +11,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.7.1'
+  var VERSION = '0.7.2'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -448,7 +448,10 @@
         '          </div>' +
         '          </div>' +
         '        </div>' +
-        '        <div class="kc-outline" hidden></div>' +
+        '        <div class="kc-ol-zone" hidden>' +
+        '          <div class="kc-ol-rail"><div class="kc-ol-line"></div><div class="kc-ol-thumb"></div></div>' +
+        '          <div class="kc-ol-panel"></div>' +
+        '        </div>' +
         '      </div>' +
         // ---- 右侧信息栏（复刻会话窗口右栏：信息 / 自动归纳 / 快捷操作） ----
         '      <aside class="kc-rightrail">' +
@@ -503,7 +506,10 @@
       els.chat = root.querySelector('.kc-chat')
       els.chattitle = root.querySelector('.kc-chattitle')
       els.msgs = root.querySelector('.kc-msgs')
-      els.outline = root.querySelector('.kc-outline')
+      els.olzone = root.querySelector('.kc-ol-zone')
+      els.olrail = root.querySelector('.kc-ol-rail')
+      els.olthumb = root.querySelector('.kc-ol-thumb')
+      els.olpanel = root.querySelector('.kc-ol-panel')
       els.input = root.querySelector('.kc-input')
       els.send = root.querySelector('.kc-send')
       els.stop = root.querySelector('.kc-stop')
@@ -1198,7 +1204,7 @@
     }
     function scrollBottom() { els.msgs.scrollTop = els.msgs.scrollHeight; markOutlineDirty() }
 
-    // ---- 内容概括导航（复刻 kimi 原生：消息区右缘文字大纲，每条提问一行、当前项高亮） ----
+    // ---- 内容概括大纲（复刻 kimi 原生：平时细指示条，悬停滑出文字面板） ----
     var outlineDirty = false
     function outlineText(row) {
       var c = row.querySelector('.kc-msg-content')
@@ -1212,12 +1218,17 @@
     }
     function updateOutline() {
       outlineDirty = false
-      if (!els.outline) return
+      if (!els.olzone) return
       var rows = els.msgs.querySelectorAll('.kc-msg-user')
-      if (!rows.length || els.chat.hidden) { els.outline.hidden = true; els.outline.innerHTML = ''; return }
-      // 大纲显隐会改变消息区宽度/高度：先记住是否贴底，重建后恢复
-      var atBottom = els.msgs.scrollTop + els.msgs.clientHeight >= els.msgs.scrollHeight - 30
-      els.outline.hidden = false
+      if (!rows.length || els.chat.hidden) {
+        els.olzone.hidden = true
+        els.olpanel.innerHTML = ''
+        var old0 = els.olrail.querySelectorAll('.kc-ol-tick')
+        for (var k0 = 0; k0 < old0.length; k0++) old0[k0].remove()
+        return
+      }
+      els.olzone.hidden = false
+      // 文字面板：每条提问一行
       var frag = document.createDocumentFragment()
       rows.forEach(function (row) {
         var item = document.createElement('div')
@@ -1231,15 +1242,27 @@
         })
         frag.appendChild(item)
       })
-      els.outline.innerHTML = ''
-      els.outline.appendChild(frag)
-      if (atBottom) els.msgs.scrollTop = els.msgs.scrollHeight
+      els.olpanel.innerHTML = ''
+      els.olpanel.appendChild(frag)
+      // 指示条小刻度：按位置比例排布
+      var old = els.olrail.querySelectorAll('.kc-ol-tick')
+      for (var k = 0; k < old.length; k++) old[k].remove()
+      var total = Math.max(els.msgs.scrollHeight, 1)
+      var tfrag = document.createDocumentFragment()
+      rows.forEach(function (row) {
+        var t = document.createElement('div')
+        t.className = 'kc-ol-tick'
+        t.style.top = (row.offsetTop / total * 100).toFixed(2) + '%'
+        tfrag.appendChild(t)
+      })
+      els.olrail.appendChild(tfrag)
       markOutlineCur()
     }
     function markOutlineCur() {
-      if (!els.outline || els.outline.hidden) return
+      if (!els.olzone || els.olzone.hidden) return
       var rows = els.msgs.querySelectorAll('.kc-msg-user')
-      var items = els.outline.children
+      var items = els.olpanel.children
+      var ticks = els.olrail.querySelectorAll('.kc-ol-tick')
       if (rows.length !== items.length) return
       var curIdx = 0
       // 滚到底部时直接高亮最后一条（末条可能比视口矮，offsetTop 判不到）
@@ -1253,13 +1276,20 @@
         }
       }
       for (var j = 0; j < items.length; j++) items[j].classList.toggle('kc-ol-cur', j === curIdx)
-      // 大纲栏自身滚动，保持当前项可见（手动算，避免 scrollIntoView 误滚消息区）
+      for (var m = 0; m < ticks.length; m++) ticks[m].classList.toggle('kc-ol-tick-cur', m === curIdx)
+      // 蓝色当前位置滑块（指示条上的mini滚动位置）
+      var sh = Math.max(els.msgs.scrollHeight, 1)
+      var hpct = Math.max(els.msgs.clientHeight / sh * 100, 4)
+      var tpct = Math.min(els.msgs.scrollTop / sh * 100, 100 - hpct)
+      els.olthumb.style.top = tpct.toFixed(2) + '%'
+      els.olthumb.style.height = hpct.toFixed(2) + '%'
+      // 面板自身滚动，保持当前项可见（手动算，避免 scrollIntoView 误滚消息区）
       var cur = items[curIdx]
       if (cur) {
         var ot = cur.offsetTop
-        if (ot < els.outline.scrollTop) els.outline.scrollTop = ot - 8
-        else if (ot + cur.offsetHeight > els.outline.scrollTop + els.outline.clientHeight) {
-          els.outline.scrollTop = ot + cur.offsetHeight - els.outline.clientHeight + 8
+        if (ot < els.olpanel.scrollTop) els.olpanel.scrollTop = ot - 8
+        else if (ot + cur.offsetHeight > els.olpanel.scrollTop + els.olpanel.clientHeight) {
+          els.olpanel.scrollTop = ot + cur.offsetHeight - els.olpanel.clientHeight + 8
         }
       }
     }

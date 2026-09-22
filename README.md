@@ -34,8 +34,9 @@ It also embeds the **VCP (Visual Card Protocol)** renderer adapted from [dsh-raw
 ### ① 💬 Sidebar「聊天」button → full-screen Discussion Space
 
 - A new **「聊天」button** in the Web UI sidebar opens a full-screen module (`#kc-chat` route, survives refresh, `Esc` to exit)
-- Layout mirrors the session window: topic rail on the left, chat area on the right — a **fluid column (up to 1500px)** where assistant cards stretch full width and align flush with user bubbles at any window size or zoom; composer spans the same column
-- **Content-summary outline**: a text navigator docked at the right edge of the chat area (kimi-native style) — one right-aligned line per question with ellipsis, the active one tinted with a side marker, click to jump, follows scrolling, auto-hides on narrow windows; never overlaps messages or the scrollbar
+- Layout mirrors the session window: topic rail on the left, chat area on the right — a **centered 860px column** (kimi-native look) where assistant cards span the column and sit flush with user bubbles at any window size or zoom; composer matches the column
+- **Content-summary outline** (kimi-native interaction): a slim 26px indicator strip rests at the chat's right edge — dashed rail, per-question ticks, blue position thumb; hover near it and the text outline panel slides out (one right-aligned line per question, active item tinted with side marker, click to jump, follows scrolling); moves away and it hides; auto-hidden on narrow windows
+- **No visible scrollbars** anywhere in the module (scrolling still works) — matches the native calm look
 - **Right info rail**: topic info / auto outline (click to locate) / quick actions; toggleable, auto-hides <1500px
 - Plugin **settings tab** inside kimi web Settings (answer style presets ×5, color mode, think collapse, image/TTS providers, system prompt); thinking streams collapse into a fold instead of flooding the chat
 - **Discussion-first system prompt**: the assistant answers with ` ```vcp ` cards — HTML/SVG diagrams, mind maps, mermaid charts, KaTeX formulas, clickable follow-up buttons
