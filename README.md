@@ -35,7 +35,7 @@ It also embeds the **VCP (Visual Card Protocol)** renderer adapted from [dsh-raw
 
 - A new **「聊天」button** in the Web UI sidebar opens a full-screen module (`#kc-chat` route, survives refresh, `Esc` to exit)
 - Layout mirrors the session window: topic rail on the left, chat area on the right — a **fluid column (up to 1500px)** where assistant cards stretch full width and align flush with user bubbles at any window size or zoom; composer spans the same column
-- **Content-summary nav strip**: a minimap of ticks along the right edge of the message list — one tick per message (yours tinted), positioned proportionally, hover for an auto summary (first heading), click to jump, active tick follows scrolling
+- **Content-summary outline**: a text navigator docked at the right edge of the chat area (kimi-native style) — one right-aligned line per question with ellipsis, the active one tinted with a side marker, click to jump, follows scrolling, auto-hides on narrow windows; never overlaps messages or the scrollbar
 - **Right info rail**: topic info / auto outline (click to locate) / quick actions; toggleable, auto-hides <1500px
 - Plugin **settings tab** inside kimi web Settings (answer style presets ×5, color mode, think collapse, image/TTS providers, system prompt); thinking streams collapse into a fold instead of flooding the chat
 - **Discussion-first system prompt**: the assistant answers with ` ```vcp ` cards — HTML/SVG diagrams, mind maps, mermaid charts, KaTeX formulas, clickable follow-up buttons

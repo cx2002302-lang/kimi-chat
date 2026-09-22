@@ -11,7 +11,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.7.0'
+  var VERSION = '0.7.1'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -434,11 +434,9 @@
         '    </header>' +
         '    <div class="kc-body">' +
         '      <div class="kc-col">' +
-        '        <div class="kc-msgs-wrap">' +
+        '        <div class="kc-main">' +
         '          <div class="kc-msgs"></div>' +
-        '          <div class="kc-nav" hidden></div>' +
-        '        </div>' +
-        '        <div class="kc-composer-wrap">' +
+        '          <div class="kc-composer-wrap">' +
         '          <div class="kc-composer">' +
         '            <textarea class="kc-input" rows="2" placeholder="讨论点什么… Enter 发送 / Shift+Enter 换行；/img 生图、/tts 语音"></textarea>' +
         '            <button class="kc-send" data-act="send" title="发送">↑</button>' +
@@ -448,7 +446,9 @@
         '            <button class="kc-model-btn" data-act="model" title="选择模型与思考强度（与会话同源）"></button>' +
         '            <span class="kc-hint-text">可生成 HTML/SVG 视觉辅助 · 编程任务请开会话</span>' +
         '          </div>' +
+        '          </div>' +
         '        </div>' +
+        '        <div class="kc-outline" hidden></div>' +
         '      </div>' +
         // ---- 右侧信息栏（复刻会话窗口右栏：信息 / 自动归纳 / 快捷操作） ----
         '      <aside class="kc-rightrail">' +
@@ -503,7 +503,7 @@
       els.chat = root.querySelector('.kc-chat')
       els.chattitle = root.querySelector('.kc-chattitle')
       els.msgs = root.querySelector('.kc-msgs')
-      els.nav = root.querySelector('.kc-nav')
+      els.outline = root.querySelector('.kc-outline')
       els.input = root.querySelector('.kc-input')
       els.send = root.querySelector('.kc-send')
       els.stop = root.querySelector('.kc-stop')
@@ -522,7 +522,7 @@
 
       els.search.addEventListener('input', function () { filter = els.search.value.trim().toLowerCase(); renderList() })
       panel.addEventListener('click', onClick)
-      els.msgs.addEventListener('scroll', markNavCur)
+      els.msgs.addEventListener('scroll', markOutlineCur)
       // 聊天区内 VCP 卡片按钮：填入讨论输入框（而非 kimi composer）
       els.msgs.addEventListener('click', function (e) {
         var el = e.target && e.target.closest ? e.target.closest('[onclick^="input("]') : null
@@ -1163,7 +1163,7 @@
       var msgs = (cur && cur.messages) || []
       if (!msgs.length) {
         els.msgs.innerHTML = '<div class="kc-empty">开始讨论吧 —— 可以让我用 HTML / SVG / 图表帮你把问题画出来</div>'
-        markNavDirty()
+        markOutlineDirty()
         return
       }
       msgs.forEach(function (m) { appendMsgEl(m) })
@@ -1193,57 +1193,54 @@
           content.insertBefore(thinkDetails(thinkText, false), content.firstChild)
         }
       }
-      markNavDirty()
+      markOutlineDirty()
       return content
     }
-    function scrollBottom() { els.msgs.scrollTop = els.msgs.scrollHeight; markNavDirty() }
+    function scrollBottom() { els.msgs.scrollTop = els.msgs.scrollHeight; markOutlineDirty() }
 
-    // ---- 内容概括导航条（右缘 minimap 刻度：按比例定位，点击跳转，悬停看概括） ----
-    var navDirty = false
-    function tickSummary(row) {
-      var h = row.querySelector('.kc-msg-content .kc-h')
-      var t = h ? h.textContent : ''
-      if (!t) {
-        var c = row.querySelector('.kc-msg-content')
-        t = c ? c.textContent : ''
-        t = t.replace(/💭\s*思考中…（\d+ 字）/g, '').replace(/⏳[^\n]*生成中…/g, '').replace(/▸?\s*思考过程（\d+ 字）/g, '')
-      }
-      t = (t || '').replace(/\s+/g, ' ').trim()
-      return t.length > 36 ? t.slice(0, 36) + '…' : t
+    // ---- 内容概括导航（复刻 kimi 原生：消息区右缘文字大纲，每条提问一行、当前项高亮） ----
+    var outlineDirty = false
+    function outlineText(row) {
+      var c = row.querySelector('.kc-msg-content')
+      var t = (c ? c.textContent : '').replace(/\s+/g, ' ').trim()
+      return t || '（空）'
     }
-    function markNavDirty() {
-      if (navDirty) return
-      navDirty = true
-      requestAnimationFrame(updateNav)
+    function markOutlineDirty() {
+      if (outlineDirty) return
+      outlineDirty = true
+      requestAnimationFrame(updateOutline)
     }
-    function updateNav() {
-      navDirty = false
-      if (!els.nav) return
-      var rows = els.msgs.querySelectorAll('.kc-msg')
-      if (!rows.length || els.chat.hidden) { els.nav.hidden = true; els.nav.innerHTML = ''; return }
-      els.nav.hidden = false
-      var total = Math.max(els.msgs.scrollHeight, 1)
+    function updateOutline() {
+      outlineDirty = false
+      if (!els.outline) return
+      var rows = els.msgs.querySelectorAll('.kc-msg-user')
+      if (!rows.length || els.chat.hidden) { els.outline.hidden = true; els.outline.innerHTML = ''; return }
+      // 大纲显隐会改变消息区宽度/高度：先记住是否贴底，重建后恢复
+      var atBottom = els.msgs.scrollTop + els.msgs.clientHeight >= els.msgs.scrollHeight - 30
+      els.outline.hidden = false
       var frag = document.createDocumentFragment()
       rows.forEach(function (row) {
-        var t = document.createElement('div')
-        var isUser = row.classList.contains('kc-msg-user')
-        t.className = 'kc-nav-tick' + (isUser ? ' kc-nav-user' : '')
-        t.style.top = (row.offsetTop / total * 100).toFixed(2) + '%'
-        t.title = (isUser ? '我：' : 'AI：') + (tickSummary(row) || '（空）')
-        t.addEventListener('click', function () {
+        var item = document.createElement('div')
+        item.className = 'kc-ol-item'
+        var span = document.createElement('span')
+        span.textContent = outlineText(row)
+        item.appendChild(span)
+        item.title = outlineText(row)
+        item.addEventListener('click', function () {
           row.scrollIntoView({ behavior: 'smooth', block: 'start' })
         })
-        frag.appendChild(t)
+        frag.appendChild(item)
       })
-      els.nav.innerHTML = ''
-      els.nav.appendChild(frag)
-      markNavCur()
+      els.outline.innerHTML = ''
+      els.outline.appendChild(frag)
+      if (atBottom) els.msgs.scrollTop = els.msgs.scrollHeight
+      markOutlineCur()
     }
-    function markNavCur() {
-      if (!els.nav || els.nav.hidden) return
-      var rows = els.msgs.querySelectorAll('.kc-msg')
-      var ticks = els.nav.children
-      if (rows.length !== ticks.length) return
+    function markOutlineCur() {
+      if (!els.outline || els.outline.hidden) return
+      var rows = els.msgs.querySelectorAll('.kc-msg-user')
+      var items = els.outline.children
+      if (rows.length !== items.length) return
       var curIdx = 0
       // 滚到底部时直接高亮最后一条（末条可能比视口矮，offsetTop 判不到）
       if (els.msgs.scrollTop + els.msgs.clientHeight >= els.msgs.scrollHeight - 20) {
@@ -1255,7 +1252,16 @@
           else break
         }
       }
-      for (var j = 0; j < ticks.length; j++) ticks[j].classList.toggle('kc-nav-cur', j === curIdx)
+      for (var j = 0; j < items.length; j++) items[j].classList.toggle('kc-ol-cur', j === curIdx)
+      // 大纲栏自身滚动，保持当前项可见（手动算，避免 scrollIntoView 误滚消息区）
+      var cur = items[curIdx]
+      if (cur) {
+        var ot = cur.offsetTop
+        if (ot < els.outline.scrollTop) els.outline.scrollTop = ot - 8
+        else if (ot + cur.offsetHeight > els.outline.scrollTop + els.outline.clientHeight) {
+          els.outline.scrollTop = ot + cur.offsetHeight - els.outline.clientHeight + 8
+        }
+      }
     }
     // 回读当前话题（自动起名/消息计数变化后刷新标题与右栏）
     function refreshCur() {
