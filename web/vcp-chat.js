@@ -11,7 +11,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.6.1'
+  var VERSION = '0.6.2'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -1000,7 +1000,7 @@
       '.kc-setform input[type=text],.kc-setform input[type=password],.kc-setform select,.kc-setform textarea{flex:1;min-width:0;padding:6px 8px;border:1px solid rgba(128,128,128,.35);border-radius:6px;background:transparent;color:inherit;font:inherit}' +
       // 原生下拉弹层是白底：选项文字必须显式深色，否则深色主题下白字白底看不清
       '.kc-setform select option{color:#1f2937;background:#ffffff}' +
-      '.kc-setform textarea{min-height:90px;resize:vertical;font-size:12px}' +
+      '.kc-setform textarea{display:block;width:100%;box-sizing:border-box;min-height:110px;resize:vertical;font-size:12px}' +
       '.kc-setform .kc-fhint{opacity:.55;font-size:11px;margin-left:104px}' +
       '.kc-setform .kc-fbtns{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}' +
       '.kc-setform .kc-fbtns button{padding:7px 14px;border-radius:7px;border:1px solid rgba(128,128,128,.4);background:rgba(128,128,128,.08);color:inherit;cursor:pointer;font:inherit}' +
