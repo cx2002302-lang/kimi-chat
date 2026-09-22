@@ -98,6 +98,8 @@ node ~/.kimi-code/plugins/managed/kimi-chat/installer/install.cjs
 
 Chat works out of the box (follows your CLI default model). For `/img` and `/tts`, fill in your generation provider keys in `~/.kimi-code/kimi-chat/config.json` (see `config.json.example`).
 
+> 🤖 **AI one-click deployment**: hand [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) to an AI agent — it contains preconditions, gated steps, a decision table and a verified one-shot script.
+
 ## ⚙️ Configuration
 
 `~/.kimi-code/kimi-chat/config.json` (auto-created, mode 600):

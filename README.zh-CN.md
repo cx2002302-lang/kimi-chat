@@ -98,6 +98,8 @@ node ~/.kimi-code/plugins/managed/kimi-chat/installer/install.cjs
 
 聊天开箱即用（跟随 CLI 默认模型）；`/img` 生图与 `/tts` 语音需在 `~/.kimi-code/kimi-chat/config.json` 填入生成 provider 的 key（参考 `config.json.example`）。
 
+> 🤖 **AI 一键部署**：把 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) 丢给 AI agent 即可——含前置检查、带验证关卡的步骤、决策表和已实测的一键脚本。
+
 ## ⚙️ 配置
 
 `~/.kimi-code/kimi-chat/config.json`（自动创建，600 权限）：
