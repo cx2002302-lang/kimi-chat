@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.7.5'
+  var VERSION = '0.7.6'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -414,7 +414,7 @@
         '      <label class="kc-toggle kc-trusted"><input type="checkbox" data-k="trusted"><span class="kc-switch"></span><span class="kc-tlabel">可信模式<em>（允许执行卡片脚本，慎用）</em></span></label>' +
         '    </div>' +
         '    <div class="kc-status"></div>' +
-        '    <div class="kc-ver"><button class="kc-setgear" data-act="settings" title="插件设置">⚙️</button> kimi-chat v' + VERSION + '</div>' +
+        '    <button class="kc-ver" data-act="settings" title="插件设置">⚙️ 设置 · kimi-chat v' + VERSION + '</button>' +
         '  </div>' +
         '</div>' +
         // ---- 主区（复刻会话窗口形态） ----
@@ -781,13 +781,20 @@
       var on = els.list.querySelectorAll('.kc-drop-on')
       for (var i = 0; i < on.length; i++) on[i].classList.remove('kc-drop-on')
     }
+    // 菜单定位：优先在锚点下方弹出；实测高度放不下（如列表最后一项）就改向上弹，保证整体可见可选
+    function placePop(pop, anchorBtn, leftOffset) {
+      var br = anchorBtn.getBoundingClientRect()
+      var hr = host.getBoundingClientRect()
+      var mh = pop.offsetHeight || 0
+      var top = br.bottom + 2
+      if (mh && top + mh > hr.height - 8) top = Math.max(8, br.top - mh - 2)
+      pop.style.top = top + 'px'
+      pop.style.left = Math.max(br.left - (leftOffset || 140), 8) + 'px'
+    }
     function openFolderMenu(btn) {
       menuFolderId = btn.getAttribute('data-fmenu')
-      var br = btn.getBoundingClientRect()
-      var hr = host.getBoundingClientRect()
-      els.fmenu.style.top = Math.min(br.bottom + 2, hr.height - 160) + 'px'
-      els.fmenu.style.left = Math.max(br.left - 150, 8) + 'px'
       els.fmenu.hidden = false
+      placePop(els.fmenu, btn, 150)
     }
     function onFolderAction(act) {
       els.fmenu.hidden = true
@@ -812,12 +819,9 @@
       }
       walk('', 0)
       els.movepop.innerHTML = html
-      var br = anchorBtn.getBoundingClientRect()
-      var hr = host.getBoundingClientRect()
-      els.movepop.style.top = Math.min(br.top, hr.height - Math.min(40 + folders.length * 32, 400)) + 'px'
-      els.movepop.style.left = Math.max(br.left - 150, 8) + 'px'
       els.movepop.style.maxHeight = '380px'
       els.movepop.hidden = false
+      placePop(els.movepop, anchorBtn, 150)
     }
     function iconHtml(t) {
       if (t.icon && t.icon.charAt(0) === '/') return '<img class="kc-item-icon-img" src="' + esc(svcUrl(t.icon)) + '" alt="">'
@@ -926,11 +930,8 @@
     var menuTopicId = null
     function openMenu(btn) {
       menuTopicId = btn.closest('.kc-item').getAttribute('data-id')
-      var br = btn.getBoundingClientRect()
-      var hr = host.getBoundingClientRect()
-      els.menu.style.top = Math.min(br.bottom + 2, hr.height - 260) + 'px'
-      els.menu.style.left = Math.max(br.left - 120, 8) + 'px'
       els.menu.hidden = false
+      placePop(els.menu, btn, 120)
     }
     function onMenuAction(act) {
       els.menu.hidden = true

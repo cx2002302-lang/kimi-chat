@@ -184,7 +184,6 @@
 .kc-tlabel em { font-style: normal; color: var(--kc-fg-dim); font-size: 11px; }
 .kc-trusted .kc-tlabel { color: #b45309; }
 .kc-status { margin-top: 10px; font-size: 10.5px; color: var(--kc-fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kc-ver { margin-top: 4px; font-size: 10.5px; color: var(--kc-fg-dim); text-align: right; }
 
 /* 服务未运行提示 */
 .kc-svcdown { padding: 36px 18px; text-align: center; }
@@ -553,8 +552,8 @@
   font-size: 14px; font-weight: 700;
 }
 .kc-setbody { padding: 4px 18px 18px; overflow-y: auto; }
-.kc-setgear {
-  border: none; background: transparent; color: var(--kc-fg-dim);
-  cursor: pointer; font-size: 12px; padding: 1px 3px; border-radius: 5px;
+.kc-ver {
+  display: block; width: 100%; margin-top: 4px; font-size: 10.5px; color: var(--kc-fg-dim); text-align: right;
+  border: none; background: transparent; cursor: pointer; padding: 4px 6px; border-radius: 6px; user-select: none;
 }
-.kc-setgear:hover { background: var(--kc-hover); color: inherit; }
+.kc-ver:hover { background: var(--kc-hover); color: var(--kc-fg); }
