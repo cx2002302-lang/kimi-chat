@@ -615,7 +615,9 @@ async function route(req, res) {
   // 同源入口：/kc-api/* 是本服务 API（新版 kimi web 的 CSP `default-src 'self'` 拦跨端口 fetch，
   // 通过 http://<host>:58931/ 反代入口打开 UI 时，页面与 API 天然同源）
   if (p.startsWith('/kc-api/')) {
-    req.url = p.slice('/kc-api'.length) + (u.search || '')
+    let rest = p.slice('/kc-api'.length)
+    if (rest === '/health') rest = '/api/health'
+    req.url = rest + (u.search || '')
     u = new URL(req.url, 'http://127.0.0.1')
     p = u.pathname
   }

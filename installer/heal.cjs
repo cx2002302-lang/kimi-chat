@@ -75,7 +75,7 @@ function healOne(dist) {
   if (html.includes(MARKER)) return changed
   const at = insertPoint(html)
   if (at === -1) return changed
-  const patched = html.slice(0, at) + '\n    <!-- ' + MARKER + ' v0.4.0 (healed) -->\n    ' + LOADER_TAG + html.slice(at)
+  const patched = html.slice(0, at) + '\n    <!-- ' + MARKER + ' v' + (pluginVer || '?') + ' (healed) -->\n    ' + LOADER_TAG + html.slice(at)
   try { fs.writeFileSync(indexPath, patched) } catch { return changed }
   return true
 }
