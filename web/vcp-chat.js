@@ -11,9 +11,22 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.5.0'
+  var VERSION = '0.5.2'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
-  var SVC = location.protocol + '//' + location.hostname + ':58931'
+  var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
+  var SVC = SVC_DIRECT
+  // 三级回退：① 同源反代入口（http://<host>:58931/ 打开 UI 时天然同源，任何 CSP/协议都能用）
+  //           ② Service Worker 同源桥（secure context：localhost 或 https）
+  //           ③ 直连 :58931（旧版 kimi web 无 CSP 时可跨端口）
+  var svcReady = (async function () {
+    try {
+      var r = await fetch('/kc-api/health', { headers: svcHeaders() })
+      var j = r.ok && (r.headers.get('content-type') || '').indexOf('json') !== -1 ? await r.json().catch(function () { return null }) : null
+      if (j && j.ok === true && j.version) { SVC = location.origin + '/kc-api'; return true }
+    } catch (e) {}
+    SVC = SVC_DIRECT
+    return false
+  })()
   var MODULE_HASH = 'kc-chat'
   var LS = {
     render: 'kimi-chat.render',
@@ -260,7 +273,9 @@
     return SVC + path + (t ? (path.indexOf('?') === -1 ? '?' : '&') + 'access_token=' + encodeURIComponent(t) : '')
   }
   function svcOk() {
-    return fetch(SVC + '/api/health', { method: 'GET', headers: svcHeaders() })
+    return svcReady.then(function () {
+      return fetch(SVC + '/api/health', { method: 'GET', headers: svcHeaders() })
+    })
       .then(function (r) { return r.json() })
       .then(function (j) { return j && j.ok ? j : null })
       .catch(function () { return null })
@@ -268,7 +283,9 @@
   function svcJson(path, opts) {
     opts = opts || {}
     opts.headers = Object.assign(svcHeaders(!!opts.body), opts.headers || {})
-    return fetch(SVC + path, opts).then(function (r) {
+    return svcReady.then(function () {
+      return fetch(SVC + path, opts)
+    }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) {
         if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status))
         return j
@@ -354,8 +371,11 @@
         '  <div class="kc-searchwrap"><input class="kc-search" type="text" placeholder="搜索话题…" spellcheck="false"></div>' +
         '  <div class="kc-list" role="list"></div>' +
         '  <div class="kc-svcdown" hidden>' +
-        '    <div class="kc-svcdown-title">本地服务未运行</div>' +
-        '    <div class="kc-svcdown-tip">讨论空间需要 kimi-chat 本地服务。<br>请在终端执行：<br><code>node ~/.kimi-code/plugins/managed/kimi-chat/installer/watch.cjs</code></div>' +
+        '    <div class="kc-svcdown-title">连不上本地服务</div>' +
+        '    <div class="kc-svcdown-tip">讨论空间需要 kimi-chat 本地服务。<br>' +
+        '新版 kimi web 的安全策略（CSP）禁止页面跨端口直连，请改用统一入口打开：<br>' +
+        '<code>http://' + location.hostname + ':58931/</code>（带上原页面的 token）<br>' +
+        '或确认服务在运行：<code>node ~/.kimi-code/plugins/managed/kimi-chat/installer/watch.cjs status</code></div>' +
         '    <button class="kc-btn" data-act="retry">重试连接</button>' +
         '  </div>' +
         '  <div class="kc-rail-foot">' +
@@ -841,11 +861,13 @@
 
       var acc = ''
       aborter = new AbortController()
-      fetch(SVC + '/api/topics/' + cur.id + '/chat', {
+      svcReady.then(function () {
+      return fetch(SVC + '/api/topics/' + cur.id + '/chat', {
         method: 'POST',
         headers: svcHeaders(true),
         body: JSON.stringify({ content: text }),
         signal: aborter.signal
+      })
       }).then(function (res) {
         if (!res.ok || !res.body) throw new Error('HTTP ' + res.status)
         var reader = res.body.getReader()

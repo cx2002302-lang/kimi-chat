@@ -5,7 +5,7 @@
 > 给 [Kimi Code CLI](https://www.kimi.com/code/docs/en/) 的 Web UI（`kimi web`）加一个**「讨论空间」**——以讨论问题为主的全屏聊天模块，🎨 支持 VCP 视觉渲染（HTML/SVG/Mermaid/KaTeX 卡片），与会话系统完全解耦。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.2-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -68,6 +68,8 @@ Kimi Code 的会话是用来**写代码**的；kimi-chat 给你一个专门**想
 ### ⑥ 📁 彩蛋：工作区选择器「新建文件夹」
 
 - 添加工作区对话框补了一个**新建文件夹**按钮——就地建目录，带校验和友好报错
+
+> 💡 **推荐入口（新版 kimi web 带 CSP 时必需）**：用统一入口 **`http://<主机>:58931/`**（带上 token）打开。本地服务会把整个 Web UI 反向代理（含 WebSocket），页面与聊天 API（`/kc-api/*`）天然同源，新版 CSP 拦不到；内网 IP / 远程浏览器同样适用，无需 SSH 隧道。
 
 ## 📦 安装
 

@@ -19,12 +19,13 @@
  * 否则只监听 127.0.0.1；请求体限 1MB；/images 与 /audio 防路径穿越。
  */
 const http = require('node:http')
+const net = require('node:net')
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.5.0'
+const VERSION = '0.5.2'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -553,11 +554,75 @@ function exportMarkdown(topic) {
 }
 
 // ---------- 路由 ----------
+// kimi web 上游端口发现（同源反代用）：config.web_port 优先，其次常见端口探测
+let webPortCache = { at: 0, port: 0 }
+async function findWebPort(cfg) {
+  if (webPortCache.port && Date.now() - webPortCache.at < 60000) return webPortCache.port
+  const candidates = []
+  if (cfg.web_port) candidates.push(cfg.web_port)
+  for (const p of [58627, 58642, 58643]) if (!candidates.includes(p)) candidates.push(p)
+  for (const port of candidates) {
+    try {
+      const ctl = new AbortController()
+      const t = setTimeout(() => ctl.abort(), 800)
+      const r = await fetch('http://127.0.0.1:' + port + '/api/v1/meta', { signal: ctl.signal })
+      clearTimeout(t)
+      if (r.status) { webPortCache = { at: Date.now(), port }; return port }
+    } catch { /* 下一个 */ }
+  }
+  return 0
+}
+// 反向代理：把非本服务 API 的请求转给 kimi web（Host 改写绕开 DNS-rebinding 检查）
+async function proxyToWeb(req, res) {
+  const port = await findWebPort(loadConfig())
+  if (!port) {
+    res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('未找到运行中的 kimi web（可在 config.json 配置 web_port）')
+    return
+  }
+  const headers = Object.assign({}, req.headers, { host: '127.0.0.1:' + port })
+  const preq = http.request({ host: '127.0.0.1', port, path: req.url, method: req.method, headers }, (pres) => {
+    res.writeHead(pres.statusCode || 502, pres.headers)
+    pres.pipe(res)
+  })
+  preq.on('error', () => { try { res.writeHead(502); res.end() } catch { /* 已断 */ } })
+  req.pipe(preq)
+}
+// WebSocket 隧道（kimi web 的实时连接）：原始转发 + Host 改写
+function tunnelUpgrade(req, socket, head) {
+  findWebPort(loadConfig()).then((port) => {
+    if (!port) { socket.destroy(); return }
+    const up = net.connect(port, '127.0.0.1', () => {
+      const lines = [req.method + ' ' + req.url + ' HTTP/' + req.httpVersion]
+      for (const k of Object.keys(req.headers)) {
+        if (k.toLowerCase() === 'host') continue
+        lines.push(k + ': ' + req.headers[k])
+      }
+      lines.push('host: 127.0.0.1:' + port, '', '')
+      up.write(lines.join('\r\n'))
+      if (head && head.length) up.write(head)
+      up.pipe(socket)
+      socket.pipe(up)
+    })
+    up.on('error', () => socket.destroy())
+    socket.on('error', () => up.destroy())
+  })
+}
+
 async function route(req, res) {
+  let u = new URL(req.url, 'http://127.0.0.1')
+  let p = u.pathname
+  // 同源入口：/kc-api/* 是本服务 API（新版 kimi web 的 CSP `default-src 'self'` 拦跨端口 fetch，
+  // 通过 http://<host>:58931/ 反代入口打开 UI 时，页面与 API 天然同源）
+  if (p.startsWith('/kc-api/')) {
+    req.url = p.slice('/kc-api'.length) + (u.search || '')
+    u = new URL(req.url, 'http://127.0.0.1')
+    p = u.pathname
+  }
+  const isApi = p.startsWith('/api/') || p.startsWith('/images/') || p.startsWith('/audio/')
+  if (!isApi) return proxyToWeb(req, res)
   cors(res)
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
-  const u = new URL(req.url, 'http://127.0.0.1')
-  const p = u.pathname
 
   if (!checkAuth(req, u)) return sendJson(res, 401, { error: '未认证：请通过 kimi web 页面访问（bearer token）' })
 
@@ -727,6 +792,7 @@ function start(port) {
       try { sendJson(res, 500, { error: '内部错误：' + e.message }) } catch { /* 连接已断 */ }
     })
   })
+  server.on('upgrade', tunnelUpgrade)
   server.on('error', (e) => {
     // 端口被占用等：只记录，看门狗职能不受影响
     try { fs.appendFileSync(path.join(STATE_DIR, 'watch.log'), new Date().toISOString() + ' service error: ' + e.message + '\n') } catch {}

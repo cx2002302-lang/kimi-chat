@@ -5,7 +5,7 @@
 > A **Discussion Space** plugin for [Kimi Code CLI](https://www.kimi.com/code/docs/en/) Web UI (`kimi web`) — a full-screen chat module for *talking through problems*, with 🎨 VCP visual rendering (HTML/SVG/Mermaid/KaTeX cards), fully decoupled from coding sessions.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.2-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -68,6 +68,8 @@ It also embeds the **VCP (Visual Card Protocol)** renderer adapted from [dsh-raw
 ### ⑥ 📁 Bonus: "New folder" in the workspace picker
 
 - The *Add workspace* dialog gains a **新建文件夹** button — create a directory in place, with validation and friendly errors
+
+> 💡 **Recommended entry (required for newer kimi web with CSP):** open the UI via the unified entry **`http://<host>:58931/`** (append your token). The local service reverse-proxies the whole Web UI (WebSocket included), so the page and the chat API share one origin and newer CSP versions can't block it. Remote/LAN access works the same way — no SSH tunnel needed.
 
 ## 📦 Installation
 

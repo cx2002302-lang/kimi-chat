@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.2（2026-09-22）—— 修复新版 kimi web CSP 导致的「本地服务未运行」
+
+**根因**：新版 kimi web 给所有响应（含插件 JS、甚至 Service Worker 脚本）都带
+`Content-Security-Policy: default-src 'self'`，页面里 fetch 到 `:58931`（跨端口）被浏览器
+直接拦截。先后排除了两条路：SW 同源桥（SW 脚本自身也带同样 CSP，桥内 fetch 一样被拦）、
+SSH 隧道依赖（用户走内网 IP 直访）。
+
+**方案：统一入口反向代理**。本地服务除了 API，现在还会把其余所有请求**反代到 kimi web**
+（含 WebSocket 隧道、Host 改写绕过 DNS-rebinding 检查、上游端口自动探测）：
+
+- 用 **`http://<主机>:58931/`**（带上 token）打开 Kimi Code，页面与聊天 API（`/kc-api/*`）
+  天然同源，CSP `default-src 'self'` 下一切正常——本机/内网 IP/远程浏览器通吃。
+- 前端三级回退：同源 `/kc-api`（严格校验 JSON，防 SPA 兜底误判）→ 直连 `:58931`（旧版无 CSP）
+  → 都不行时给出明确指引（直接告诉你该用哪个统一入口地址）。
+- `config.json` 新增 `web_port`（上游 kimi web 端口，默认自动探测 58627/58642/58643）。
+- 连不上时的提示文案更新：从「去启动服务」改为「CSP 说明 + 统一入口地址 + 服务状态命令」。
+
 ## v0.5.0（2026-09-21）—— 通用生成 provider（生图 + 语音），去除 MiniMax 品牌绑定
 
 **需求**：生图/语音不应锁死在 MiniMax——做成**通用 provider 配置**（可配 MiniMax，也可配任何兼容端点）。

@@ -41,6 +41,12 @@
     } catch (e) {}
     return __kcToken
   }
+  // 历史遗留：旧版曾注册 SW 桥，但 kimi web 给 SW 脚本也带同样的 CSP，桥内 fetch 同样被拦。
+  // 统一注销，避免残留 SW 控制页面。
+  if ('serviceWorker' in navigator) {
+    try { navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister() }) }) } catch (e) {}
+  }
+  window.__kcBridgeReady = Promise.resolve(false)
   // 2) 依次加载渲染引擎与主模块（引擎先行，主模块依赖 window.VCPRender）
   function loadSeq(urls, i) {
     if (i >= urls.length) return
