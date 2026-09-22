@@ -11,7 +11,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.7.2'
+  var VERSION = '0.7.3'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -358,7 +358,7 @@
     var busy = false, aborter = null
     var els = {}
     // 界面偏好（来自服务端 /api/config 的 ui 块，设置页可改）
-    var uiCfg = { card_style: 'editorial', color_mode: 'auto', think_collapse: true, right_rail: true }
+    var uiCfg = { card_style: '', color_mode: 'auto', think_collapse: true, right_rail: true }
     var railHidden = lsGet('kc.railhidden', '0') === '1'
 
     function build() {
@@ -1176,6 +1176,12 @@
       updateRail()
       scrollBottom()
     }
+    function fmtMsgTime(ts) {
+      var d = new Date(ts || Date.now())
+      if (isNaN(d)) return ''
+      var p = function (n) { return (n < 10 ? '0' : '') + n }
+      return p(d.getHours()) + ':' + p(d.getMinutes())
+    }
     function appendMsgEl(m) {
       var empty = els.msgs.querySelector('.kc-empty')
       if (empty) empty.remove()
@@ -1186,6 +1192,25 @@
       row.appendChild(content)
       els.msgs.appendChild(row)
       renderInto(content, m)
+      content._kcRaw = m.content || ''
+      // meta 行：⧉复制 + 时间（复刻原生会话）
+      var meta = document.createElement('div')
+      meta.className = 'kc-msg-meta'
+      var cp = document.createElement('button')
+      cp.textContent = '⧉'
+      cp.title = '复制内容'
+      cp.addEventListener('click', function () {
+        var t = content._kcRaw ? content._kcRaw : content.innerText
+        if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () {
+          cp.textContent = '✓'
+          setTimeout(function () { cp.textContent = '⧉' }, 1200)
+        }).catch(function () {})
+      })
+      meta.appendChild(cp)
+      var tm = document.createElement('span')
+      tm.textContent = fmtMsgTime(m.ts)
+      meta.appendChild(tm)
+      row.appendChild(meta)
       if (m.role === 'assistant') {
         applyMsgStyle(content)
         // 思考内容折叠展示（历史消息的 think 混在 content 里，流式结束后显式传入）
@@ -1387,6 +1412,7 @@
         var sp = splitThink(acc)
         var clean = sp.answer || acc.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim()
         renderInto(aiEl, { role: 'assistant', content: clean || acc })
+        aiEl._kcRaw = clean || acc
         applyMsgStyle(aiEl)
         var thinkAll = (thinkAcc + (thinkAcc && sp.think ? '\n' : '') + sp.think).trim()
         if (thinkAll && uiCfg.think_collapse) {

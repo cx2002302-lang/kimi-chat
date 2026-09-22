@@ -34,7 +34,8 @@ It also embeds the **VCP (Visual Card Protocol)** renderer adapted from [dsh-raw
 ### ① 💬 Sidebar「聊天」button → full-screen Discussion Space
 
 - A new **「聊天」button** in the Web UI sidebar opens a full-screen module (`#kc-chat` route, survives refresh, `Esc` to exit)
-- Layout mirrors the session window: topic rail on the left, chat area on the right — a **centered 860px column** (kimi-native look) where assistant cards span the column and sit flush with user bubbles at any window size or zoom; composer matches the column
+- Layout mirrors the session window: topic rail on the left, chat area on the right — a **centered 860px column** (kimi-native look) where assistant replies sit flush with user bubbles at any window size or zoom; composer matches the column
+- **Native session look & feel**: palette taken from kimi web's own `--ms-*` colors, Schibsted Grotesk + Noto Sans SC body at 14px/22px, JetBrains Mono code, neutral gray user bubbles, per-message ⧉copy + timestamp meta row; answer styling defaults to plain native (5 VCP presets remain optional in settings)
 - **Content-summary outline** (kimi-native interaction): a slim 26px indicator strip rests at the chat's right edge — dashed rail, per-question ticks, blue position thumb; hover near it and the text outline panel slides out (one right-aligned line per question, active item tinted with side marker, click to jump, follows scrolling); moves away and it hides; auto-hidden on narrow windows
 - **No visible scrollbars** anywhere in the module (scrolling still works) — matches the native calm look
 - **Right info rail**: topic info / auto outline (click to locate) / quick actions; toggleable, auto-hides <1500px

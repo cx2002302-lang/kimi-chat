@@ -1,22 +1,27 @@
-/* kimi-chat 全屏「讨论空间」模块样式（作用于 Shadow DOM 内部） v0.3.0 */
+/* kimi-chat 全屏「讨论空间」模块样式（作用于 Shadow DOM 内部） v0.7.3 */
+/* 配色/字体对齐 kimi web 原生会话窗口（--ms-* 调色板 / Schibsted + Noto Sans SC） */
 :host {
   --kc-bg: #ffffff;
-  --kc-bg-soft: rgba(128,128,128,.06);
-  --kc-fg: #1f2937;
-  --kc-fg-dim: #6b7280;
-  --kc-border: rgba(128,128,128,.25);
-  --kc-hover: rgba(128,128,128,.1);
-  --kc-accent: #10a37f;
-  --kc-accent-hover: #0d8a6c;
+  --kc-bg-soft: #f4f4f5;
+  --kc-fg: rgba(0,0,0,.87);
+  --kc-fg-dim: rgba(0,0,0,.5);
+  --kc-border: rgba(0,0,0,.12);
+  --kc-hover: rgba(0,0,0,.06);
+  --kc-bubble: #f0f0f2;
+  --kc-accent: #2563eb;
+  --kc-accent-hover: #1d4ed8;
 }
 :host-context([data-theme='kimi']),
 :host-context([data-color-scheme='dark']) {
-  --kc-bg: #16181d;
-  --kc-bg-soft: rgba(255,255,255,.05);
-  --kc-fg: #e5e7eb;
-  --kc-fg-dim: #9ca3af;
-  --kc-border: rgba(255,255,255,.14);
-  --kc-hover: rgba(255,255,255,.07);
+  --kc-bg: hsl(0 0% 7%);
+  --kc-bg-soft: hsl(0 0% 12%);
+  --kc-fg: hsl(0 0% 93%);
+  --kc-fg-dim: hsl(0 0% 60%);
+  --kc-border: hsl(0 0% 20%);
+  --kc-hover: hsl(0 0% 16%);
+  --kc-bubble: hsl(0 0% 16%);
+  --kc-accent: hsl(215 55% 62%);
+  --kc-accent-hover: hsl(215 60% 70%);
 }
 
 .kc-module {
@@ -25,8 +30,8 @@
   display: flex;
   background: var(--kc-bg);
   color: var(--kc-fg);
-  font-family: ui-sans-serif, system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  font-size: 13px;
+  font-family: "Schibsted Grotesk Variable", "Helvetica Neue", Arial, "Noto Sans SC Variable", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
   animation: kc-fade-in .15s ease-out;
 }
 .kc-module [hidden] { display: none !important; }
@@ -186,20 +191,30 @@
   padding: 20px 0 12px;
   display: flex; flex-direction: column;
 }
-/* 消息行 = 居中内容栏（复刻原生居中风格）：助手卡片拉满栏宽，用户气泡同栏右对齐 */
+/* 消息行 = 居中内容栏（复刻原生会话窗口）：卡片拉满栏宽，用户气泡同栏右对齐 */
 .kc-msg {
-  display: flex; width: 100%; max-width: 860px; margin: 0 auto;
+  display: flex; flex-direction: column; width: 100%; max-width: 860px; margin: 0 auto;
   padding: 5px 24px; box-sizing: border-box;
 }
 .kc-msg > .kc-msg-content { width: 100%; min-width: 0; }
-.kc-msg-user { justify-content: flex-end; }
 .kc-msg-user > .kc-msg-content {
-  flex: none; width: auto; max-width: min(72%, 640px); margin-left: auto;
-  background: var(--kc-accent); color: #fff;
-  padding: 9px 13px; border-radius: 14px 14px 4px 14px;
-  white-space: pre-wrap; word-break: break-word; font-size: 13.5px; line-height: 1.6;
+  align-self: flex-end; flex: none; width: auto; max-width: min(72%, 640px);
+  background: var(--kc-bubble); color: var(--kc-fg);
+  padding: 8px 12px; border-radius: 12px 12px 4px 12px;
+  white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: calc(22 / 14);
 }
-.kc-msg-ai > .kc-msg-content { font-size: 13.5px; line-height: 1.75; }
+/* 消息底部 meta 行（⧉复制 + 时间，复刻原生） */
+.kc-msg-meta {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--kc-fg-dim); padding: 3px 2px 0; opacity: .8;
+}
+.kc-msg-user .kc-msg-meta { align-self: flex-end; }
+.kc-msg-meta button {
+  border: none; background: none; color: inherit; cursor: pointer;
+  font-size: 11px; padding: 0 2px; line-height: 1;
+}
+.kc-msg-meta button:hover { color: var(--kc-accent); opacity: 1; }
+.kc-msg-ai > .kc-msg-content { font-size: 14px; line-height: calc(22 / 14); }
 .kc-streaming .kc-msg-content::after { content: '▍'; animation: kc-blink .8s infinite; }
 @keyframes kc-blink { 50% { opacity: 0 } }
 .kc-msg-img { display: block; max-width: 320px; border-radius: 10px; margin-top: 8px; }
@@ -208,18 +223,18 @@
 .kc-msg-content p { margin: 0 0 10px; }
 .kc-msg-content p:last-child { margin-bottom: 0; }
 .kc-msg-content .kc-h { margin: 14px 0 8px; line-height: 1.4; }
-.kc-msg-content h1.kc-h { font-size: 19px; } .kc-msg-content h2.kc-h { font-size: 17px; }
-.kc-msg-content h3.kc-h { font-size: 15px; } .kc-msg-content h4.kc-h { font-size: 14px; }
+.kc-msg-content h1.kc-h { font-size: 20px; line-height: 1.6; } .kc-msg-content h2.kc-h { font-size: 18px; }
+.kc-msg-content h3.kc-h { font-size: 16px; line-height: 1.625; } .kc-msg-content h4.kc-h { font-size: 14px; }
 .kc-msg-content ul, .kc-msg-content ol { margin: 6px 0 10px; padding-left: 22px; }
 .kc-msg-content li { margin: 3px 0; }
 .kc-msg-content a { color: var(--kc-accent); }
 .kc-msg-content .kc-ic {
   background: var(--kc-bg-soft); padding: 1px 5px; border-radius: 5px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+  font-family: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px;
 }
 .kc-msg-content .kc-code {
-  background: rgba(30,34,42,.92); color: #e5e7eb; padding: 10px 12px; border-radius: 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+  background: var(--kc-code-bg, #111827); color: #e5e7eb; padding: 10px 12px; border-radius: 10px;
+  font-family: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px;
   overflow-x: auto; margin: 8px 0; white-space: pre;
 }
 .kc-msg-content .kc-q {

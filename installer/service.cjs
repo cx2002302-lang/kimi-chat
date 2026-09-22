@@ -25,7 +25,7 @@ const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.7.2'
+const VERSION = '0.7.3'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -59,7 +59,7 @@ const DEFAULT_CONFIG = {
   port: DEFAULT_PORT,
   // ---- 界面偏好（配置页可改；assistant 答复卡片样式/配色、思考折叠、右栏） ----
   ui: {
-    card_style: 'editorial',   // ''=原生 / editorial / chiaroscuro / fauvism / cyberpunk / wabi_sabi
+    card_style: '',              // ''=原生（同会话窗口观感） / editorial / chiaroscuro / fauvism / cyberpunk / wabi_sabi
     color_mode: 'auto',        // light / dark / auto（跟随 kimi web 主题）
     think_collapse: true,      // 思考过程折叠，不刷屏
     right_rail: true           // 聊天右侧信息栏（≥1500px 时显示）

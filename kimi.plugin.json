@@ -1,6 +1,6 @@
 {
   "name": "kimi-chat",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Kimi Code 讨论空间插件：Web UI 侧边栏「聊天」按钮 → 全屏讨论模块（复刻会话窗口形态，话题独立管理，聊天后端跟随 CLI 默认模型，HTML/SVG 视觉辅助讨论），可配置通用生图/语音生成 provider；内置 VCP 视觉通感（适配自 dsh-raw-html）",
   "keywords": [
     "chat",
