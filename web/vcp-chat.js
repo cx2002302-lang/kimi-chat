@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.8.0'
+  var VERSION = '0.8.1'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -145,6 +145,49 @@
   }
 
   // ---------- Markdown 渲染（安全：先转义再套格式；```vcp 块走 VCP 引擎） ----------
+  // 裸 HTML（模型没走 ```vcp 围栏直贴的）→ Markdown 等价物：剥离标签、保留排版语义
+  //（触发门槛：出现块级元素标签，避免误伤正文里提到 <div> 之类的字面量）
+  function bareHtmlToMd(text) {
+    if (!/<\/?(div|p|table|tbody|thead|tr|td|th|h[1-6]|ul|ol|blockquote|pre|section)[\s/>]/i.test(text)) return text
+    var s = text
+    // 表格 → md 表格（整块先行处理，避免内部标签被逐个剥离）
+    s = s.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, function (m, body) {
+      var rows = []
+      var re = /<tr[^>]*>([\s\S]*?)<\/tr>/gi, rm
+      while ((rm = re.exec(body))) {
+        var cells = []
+        var cre = /<(td|th)[^>]*>([\s\S]*?)<\/\1>/gi, cm
+        while ((cm = cre.exec(rm[1]))) cells.push(cm[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+        if (cells.length) rows.push(cells)
+      }
+      if (!rows.length) return ''
+      var out = '\n| ' + rows[0].join(' | ') + ' |\n|' + rows[0].map(function () { return ' --- ' }).join('|') + '|\n'
+      for (var i = 1; i < rows.length; i++) out += '| ' + rows[i].join(' | ') + ' |\n'
+      return out
+    })
+    s = s.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1\s*>/gi, function (m, lv, t) {
+      return '\n' + new Array(+lv + 1).join('#') + ' ' + t.replace(/<[^>]+>/g, '').trim() + '\n'
+    })
+    s = s.replace(/<(ul|ol)[^>]*>([\s\S]*?)<\/\1\s*>/gi, function (m, tag, body) {
+      var items = []
+      var re = /<li[^>]*>([\s\S]*?)<\/li\s*>/gi, rm
+      while ((rm = re.exec(body))) items.push(rm[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+      var out = '\n'
+      for (var i = 0; i < items.length; i++) out += (tag.toLowerCase() === 'ol' ? (i + 1) + '. ' : '- ') + items[i] + '\n'
+      return out
+    })
+    s = s.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote\s*>/gi, '\n> $1\n')
+    s = s.replace(/<pre[^>]*>([\s\S]*?)<\/pre\s*>/gi, '\n```\n$1\n```\n')
+    s = s.replace(/<br\s*\/?>/gi, '\n')
+    s = s.replace(/<(b|strong)[^>]*>([\s\S]*?)<\/\1\s*>/gi, '**$2**')
+    s = s.replace(/<(i|em)[^>]*>([\s\S]*?)<\/\1\s*>/gi, '*$2*')
+    s = s.replace(/<img[^>]*\ssrc=["']([^"']+)["'][^>]*\/?>/gi, '![]($1)')
+    s = s.replace(/<\/(p|div|section)>/gi, '\n\n').replace(/<(p|div|section)[^>]*>/gi, '')
+    s = s.replace(/<\/?span[^>]*>/gi, '')
+    s = s.replace(/<hr\s*\/?>/gi, '\n---\n')
+    s = s.replace(/<[^>]+>/g, '')
+    return s
+  }
   function mdRender(src) {
     var blocks = []
     var s = String(src == null ? '' : src)
@@ -153,6 +196,8 @@
       blocks.push({ lang: (lang || '').toLowerCase(), code: code.replace(/\n$/, '') })
       return '\n\u0000B' + (blocks.length - 1) + '\u0000\n'
     })
+    // 1.5) 围栏之外的裸 HTML → Markdown 等价排版（剥离标签，表格/标题/列表/加粗保留语义）
+    s = bareHtmlToMd(s)
     // 2) 全文转义
     s = esc(s)
     // 3) 行内格式（作用于已转义文本）
@@ -1470,24 +1515,7 @@
       els.msgs.appendChild(row)
       renderInto(content, m)
       content._kcRaw = m.content || ''
-      // meta 行：⧉复制 + 时间（复刻原生会话）
-      var meta = document.createElement('div')
-      meta.className = 'kc-msg-meta'
-      var cp = document.createElement('button')
-      cp.textContent = '⧉'
-      cp.title = '复制内容'
-      cp.addEventListener('click', function () {
-        var t = content._kcRaw ? content._kcRaw : content.innerText
-        if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () {
-          cp.textContent = '✓'
-          setTimeout(function () { cp.textContent = '⧉' }, 1200)
-        }).catch(function () {})
-      })
-      meta.appendChild(cp)
-      var tm = document.createElement('span')
-      tm.textContent = fmtMsgTime(m.ts)
-      meta.appendChild(tm)
-      row.appendChild(meta)
+      attachMeta(row, content, m)
       if (m.role === 'assistant') {
         applyMsgStyle(content)
         // 思考内容折叠展示（历史消息的 think 混在 content 里，流式结束后显式传入）
@@ -1503,6 +1531,26 @@
       }
       markOutlineDirty()
       return content
+    }
+    // meta 行：⧉复制 + 时间（复刻原生会话；历史渲染与流式收尾共用，保证结构一致）
+    function attachMeta(row, content, m) {
+      var meta = document.createElement('div')
+      meta.className = 'kc-msg-meta'
+      var cp = document.createElement('button')
+      cp.textContent = '⧉'
+      cp.title = '复制内容'
+      cp.addEventListener('click', function () {
+        var t = content._kcRaw ? content._kcRaw : content.innerText
+        if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () {
+          cp.textContent = '✓'
+          setTimeout(function () { cp.textContent = '⧉' }, 1200)
+        }).catch(function () {})
+      })
+      meta.appendChild(cp)
+      var tm = document.createElement('span')
+      tm.textContent = fmtMsgTime(m && m.ts)
+      meta.appendChild(tm)
+      row.appendChild(meta)
     }
     function scrollBottom() { els.msgs.scrollTop = els.msgs.scrollHeight; markOutlineDirty() }
     // 跳到某条消息：显式滚消息容器（scrollIntoView 受嵌套滚动容器影响会落点偏差数十像素）
@@ -1623,7 +1671,7 @@
 
       var acc = ''
       var thinkAcc = '' // 独立 reasoning 流（服务端 think 事件）
-      // 流式显示：思考只报字数；围栏代码/vcp 源不刷屏，用占位提示代替
+      // 流式显示：思考进度条（对数渐进——越想越满、永不虚满）；围栏代码/vcp 源不刷屏，用占位提示代替
       function streamDisplay() {
         if (!uiCfg.think_collapse) { aiEl.textContent = acc; return }
         var sp = splitThink(acc)
@@ -1631,7 +1679,25 @@
         var answer = sp.answer.replace(/```(\w*)[\s\S]*?(```|$)/g, function (m, lang) {
           return '\n⏳ ' + (lang === 'vcp' ? '卡片' : '代码') + '生成中…\n'
         })
-        aiEl.textContent = (thinkLen ? '💭 思考中…（' + thinkLen + ' 字）\n\n' : '') + answer
+        if (thinkLen) {
+          if (!aiEl.__kcThinkBar) {
+            aiEl.textContent = ''
+            var w = document.createElement('div')
+            w.className = 'kc-thinkbar-wrap'
+            w.innerHTML = '<span class="kc-thinkbar-label">💭 思考中</span><span class="kc-thinkbar"><i></i></span>'
+            var body = document.createElement('div')
+            body.className = 'kc-msg-content'
+            aiEl.appendChild(w)
+            aiEl.appendChild(body)
+            aiEl.__kcThinkBar = { bar: w.querySelector('.kc-thinkbar i'), label: w.querySelector('.kc-thinkbar-label'), body: body }
+          }
+          var p = 1 - Math.exp(-thinkLen / 2600) // 对数渐进：前期快速增长，后期趋于饱满
+          aiEl.__kcThinkBar.bar.style.width = (p * 100).toFixed(1) + '%'
+          if (sp.answer) aiEl.__kcThinkBar.label.textContent = '💭 已思考'
+          aiEl.__kcThinkBar.body.textContent = answer
+        } else {
+          aiEl.textContent = answer
+        }
       }
       aborter = new AbortController()
       svcReady.then(function () {
@@ -1680,9 +1746,10 @@
       }).then(function () {
         aborter = null
         setBusy(false)
-        // 流式期间是纯文本，结束后做一次完整 Markdown/VCP 渲染；思考内容折叠
+        // aiEl 即 .kc-msg-content（appendMsgEl 的返回）：流式结束后重渲染完整 Markdown/VCP
         var sp = splitThink(acc)
         var clean = sp.answer || acc.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim()
+        aiEl.__kcThinkBar = null
         try { renderInto(aiEl, { role: 'assistant', content: clean || acc }) }
         catch (e) { aiEl.textContent = clean || acc } // 渲染失败兜底：至少保住全文文本
         aiEl._kcRaw = clean || acc
@@ -1692,6 +1759,7 @@
           aiEl.insertBefore(thinkDetails(thinkAll, false), aiEl.firstChild)
         }
         aiEl.classList.remove('kc-streaming')
+        markOutlineDirty()
         // 服务端已落盘并自动起名，回读话题刷新右栏（自动归纳/消息计数）
         refreshCur()
         scrollBottom()

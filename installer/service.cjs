@@ -25,7 +25,7 @@ const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.8.0'
+const VERSION = '0.8.1'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -140,6 +140,17 @@ function parseCliRegistry(toml) {
       api_key: (/api_key\s*=\s*"([^"]*)"/.exec(body) || [])[1] || '',
     }
   }
+  // provider 自定义请求头（如 opencode-go 的 x-opencode-session）：CLI 会带，代理也必须带
+  const hdrRe = /\[providers\.([^\]]+?)\.custom_headers\]([\s\S]*?)(?=\n\[|$)/g
+  let hm
+  while ((hm = hdrRe.exec(toml))) {
+    const pname = hm[1].replace(/^"|"$/g, '')
+    const hdrs = {}
+    const kvRe = /^\s*([A-Za-z0-9_-]+)\s*=\s*"([^"]*)"/gm
+    let kv
+    while ((kv = kvRe.exec(hm[2]))) hdrs[kv[1]] = kv[2]
+    if (providers[pname] && Object.keys(hdrs).length) providers[pname].custom_headers = hdrs
+  }
   const models = []
   const modRe = /\[models\."([^"]+)"\]([\s\S]*?)(?=\n\[|$)/g
   let mm
@@ -210,7 +221,7 @@ function resolveModelBackend(cfg, modelId) {
   if (!prov) return { error: 'config.toml 中找不到 provider「' + provName + '」' }
   if (!prov.base_url) return { error: 'provider「' + provName + '」缺少 base_url' }
   if (prov.type === 'openai') {
-    return { base_url: prov.base_url, api_key: prov.api_key || 'none', model: modelName, source: provName, entry, oauth: false }
+    return { base_url: prov.base_url, api_key: prov.api_key || 'none', model: modelName, source: provName, entry, oauth: false, headers: prov.custom_headers || null }
   }
   if (provName === 'managed:kimi-code' || prov.type === 'kimi') {
     const token = loadOAuthToken()
@@ -392,7 +403,7 @@ async function callChatUpstream(backend, payload, effort) {
     if (!withEffort) delete b.reasoning_effort
     return fetch(backend.base_url + '/chat/completions', {
       method: 'POST',
-      headers: { Authorization: 'Bearer ' + backend.api_key, 'Content-Type': 'application/json' },
+      headers: Object.assign({ Authorization: 'Bearer ' + backend.api_key, 'Content-Type': 'application/json' }, backend.headers || {}),
       body: JSON.stringify(b)
     })
   }
@@ -522,7 +533,7 @@ async function handleChat(req, res, id, body) {
 async function genTitle(backend, userMsg, assistantMsg) {
   const up = await fetch(backend.base_url + '/chat/completions', {
     method: 'POST',
-    headers: { Authorization: 'Bearer ' + backend.api_key, 'Content-Type': 'application/json' },
+    headers: Object.assign({ Authorization: 'Bearer ' + backend.api_key, 'Content-Type': 'application/json' }, backend.headers || {}),
     body: JSON.stringify({
       model: backend.model,
       messages: [{
@@ -798,10 +809,14 @@ async function route(req, res) {
     const pick = (src, keys) => { const o = {}; for (const k of keys) if (src[k] !== undefined && src[k] !== '') o[k] = src[k]; return o }
     if (j.image && typeof j.image === 'object') cur.image = Object.assign({}, cur.image, pick(j.image, ['base_url', 'api_key', 'model', 'path']))
     if (j.tts && typeof j.tts === 'object') cur.tts = Object.assign({}, cur.tts, pick(j.tts, ['base_url', 'api_key', 'model', 'voice', 'path']))
-    if (j.ui && typeof j.ui === 'object') cur.ui = Object.assign({}, cur.ui, pick(j.ui, ['card_style', 'color_mode']), {
-      think_collapse: j.ui.think_collapse !== undefined ? !!j.ui.think_collapse : (cur.ui || {}).think_collapse,
-      right_rail: j.ui.right_rail !== undefined ? !!j.ui.right_rail : (cur.ui || {}).right_rail,
-    })
+    if (j.ui && typeof j.ui === 'object') {
+      cur.ui = Object.assign({}, cur.ui, pick(j.ui, ['color_mode']), {
+        think_collapse: j.ui.think_collapse !== undefined ? !!j.ui.think_collapse : (cur.ui || {}).think_collapse,
+        right_rail: j.ui.right_rail !== undefined ? !!j.ui.right_rail : (cur.ui || {}).right_rail,
+      })
+      // card_style 的空字符串（原生模式）是合法值，不能被 pick 的「跳过空串」规则吞掉
+      if (j.ui.card_style !== undefined && j.ui.card_style !== null) cur.ui.card_style = String(j.ui.card_style)
+    }
     if (j.auto_token !== undefined) cur.auto_token = !!j.auto_token
     if (typeof j.system_prompt === 'string' && j.system_prompt.trim()) cur.system_prompt = j.system_prompt
     try {
