@@ -516,8 +516,20 @@
 .kc-think-body {
   padding: 2px 12px 10px; white-space: pre-wrap; word-break: break-word;
   color: var(--kc-fg-dim); font-size: 11.5px; line-height: 1.6;
-  max-height: 260px; overflow-y: auto;
+  max-height: 180px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--kc-border) transparent;
 }
+.kc-think-body::-webkit-scrollbar { width: 6px; }
+.kc-think-body::-webkit-scrollbar-thumb { background: var(--kc-border); border-radius: 3px; }
+.kc-think-body::-webkit-scrollbar-track { background: transparent; }
+/* 追问按钮（裸 button 桥还原）：卡片内按钮风格 */
+.kc-tap {
+  display: inline-block; margin: 3px 6px 3px 0; padding: 6px 12px;
+  border: 1px solid var(--kc-border); border-radius: 8px;
+  background: var(--kc-bg-soft); color: var(--kc-fg);
+  font-size: 12.5px; font-family: inherit; cursor: pointer;
+}
+.kc-tap:hover { border-color: var(--kc-accent); color: var(--kc-accent); }
 
 /* ===== 答复卡片样式（VCPColorEngine 调色板驱动） ===== */
 .kc-msg-content.kc-styled {

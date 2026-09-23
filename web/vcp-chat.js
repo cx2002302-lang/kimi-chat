@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.8.1'
+  var VERSION = '0.8.2'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -196,6 +196,12 @@
       blocks.push({ lang: (lang || '').toLowerCase(), code: code.replace(/\n$/, '') })
       return '\n\u0000B' + (blocks.length - 1) + '\u0000\n'
     })
+    // 1.2) 裸 button 桥（模型把追问按钮直贴到围栏外）：还原成真实可点按钮
+    var taps = []
+    s = s.replace(/<button\b[^>]*\bonclick\s*=\s*["']\s*input\(\s*(['"])([\s\S]*?)\1\s*\)\s*["'][^>]*>([\s\S]*?)<\/button\s*>/gi, function (m, q, txt, label) {
+      taps.push({ text: txt, label: label.replace(/<[^>]+>/g, '').trim() || txt })
+      return '\u0000T' + (taps.length - 1) + '\u0000'
+    })
     // 1.5) 围栏之外的裸 HTML → Markdown 等价排版（剥离标签，表格/标题/列表/加粗保留语义）
     s = bareHtmlToMd(s)
     // 2) 全文转义
@@ -254,6 +260,10 @@
       para.push(ln)
     }
     flushPara(); flushList()
+    if (taps.length) html = html.replace(/\u0000T(\d+)\u0000/g, function (m, i) {
+      var tp = taps[+i]
+      return tp ? '<button type="button" class="kc-tap" data-tap="' + esc(encodeURIComponent(tp.text)) + '">' + esc(tp.label) + '</button>' : ''
+    })
     return { html: html, blocks: blocks }
   }
   // 把容器里的 .kc-vcp-slot 替换为渲染后的 VCP 卡片（开关关闭/引擎缺失时降级为源码）
@@ -704,10 +714,21 @@
       els.input.style.height = 'auto'
       els.input.style.height = Math.min(els.input.scrollHeight, 160) + 'px'
     }
+    // 卡片/正文里 onclick="input('...')" 的全局桥（原生 dsh 约定）：填充输入框并聚焦
+    window.input = function (text) {
+      try {
+        if (!els.input) return
+        els.input.value = String(text == null ? '' : text)
+        autosize()
+        els.input.focus()
+      } catch (e) {}
+    }
 
     // ---------- 事件分发 ----------
     function onClick(e) {
       if (e.target === els.setmask) { closeSettings(); return }
+      var tap = e.target.closest('[data-tap]')
+      if (tap) { window.input(decodeURIComponent(tap.getAttribute('data-tap'))); return }
       var actBtn = e.target.closest('[data-act]')
       if (actBtn) {
         var act = actBtn.getAttribute('data-act')
@@ -1299,11 +1320,13 @@
       }
       return { think: think.trim(), answer: answer.trim(), streaming: rest === '' && acc.indexOf('<think>') !== -1 && acc.lastIndexOf('</think>') < acc.lastIndexOf('<think>') }
     }
-    function thinkDetails(thinkText, live) {
+    // 原生风思考折叠：头行「思考过程 · Ns · N 字」，正文内嵌滚动窗（不撑开消息流）
+    function thinkDetails(thinkText, live, secs) {
       var d = document.createElement('details')
       d.className = 'kc-think'
       var s = document.createElement('summary')
-      s.innerHTML = '💭 思考过程 <em>' + (live ? '进行中… ' : '') + '(' + thinkText.length + ' 字)</em>'
+      var meta = live ? '进行中…' : ((secs ? secs + 's · ' : '') + thinkText.length + ' 字')
+      s.innerHTML = '💭 思考过程 <em>' + meta + '</em>'
       var pre = document.createElement('div')
       pre.className = 'kc-think-body'
       pre.textContent = thinkText
@@ -1526,7 +1549,7 @@
           if (thinkText) renderInto(content, { role: 'assistant', content: sp.answer || '（见思考过程）' })
         }
         if (thinkText && uiCfg.think_collapse) {
-          content.insertBefore(thinkDetails(thinkText, false), content.firstChild)
+          content.insertBefore(thinkDetails(thinkText, false, m.think_secs), content.firstChild)
         }
       }
       markOutlineDirty()
@@ -1541,10 +1564,9 @@
       cp.title = '复制内容'
       cp.addEventListener('click', function () {
         var t = content._kcRaw ? content._kcRaw : content.innerText
-        if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () {
-          cp.textContent = '✓'
-          setTimeout(function () { cp.textContent = '⧉' }, 1200)
-        }).catch(function () {})
+        copyText(t, '内容已复制') // 带 legacy 回退：LAN http 非安全上下文下 navigator.clipboard 不可用
+        cp.textContent = '✓'
+        setTimeout(function () { cp.textContent = '⧉' }, 1200)
       })
       meta.appendChild(cp)
       var tm = document.createElement('span')
@@ -1671,6 +1693,8 @@
 
       var acc = ''
       var thinkAcc = '' // 独立 reasoning 流（服务端 think 事件）
+      var thinkStartedAt = 0 // 思考计时：首段 reasoning → 首段正文
+      var thinkEndedAt = 0
       // 流式显示：思考进度条（对数渐进——越想越满、永不虚满）；围栏代码/vcp 源不刷屏，用占位提示代替
       function streamDisplay() {
         if (!uiCfg.think_collapse) { aiEl.textContent = acc; return }
@@ -1725,8 +1749,9 @@
               var j
               try { j = JSON.parse(payload) } catch (e) { continue }
               if (j.error) { acc += '\n\n> ⚠️ ' + j.error; aiEl.textContent = acc; scrollBottom(); continue }
-              if (j.think) { thinkAcc += j.think; streamDisplay(); scrollBottom(); continue }
+              if (j.think) { if (!thinkStartedAt) thinkStartedAt = Date.now(); thinkAcc += j.think; streamDisplay(); scrollBottom(); continue }
               if (j.delta) {
+                if (thinkStartedAt && !thinkEndedAt) thinkEndedAt = Date.now()
                 acc += j.delta
                 streamDisplay()
                 scrollBottom()
@@ -1756,7 +1781,8 @@
         applyMsgStyle(aiEl)
         var thinkAll = (thinkAcc + (thinkAcc && sp.think ? '\n' : '') + sp.think).trim()
         if (thinkAll && uiCfg.think_collapse) {
-          aiEl.insertBefore(thinkDetails(thinkAll, false), aiEl.firstChild)
+          var thinkSecs = thinkStartedAt ? Math.max(1, Math.round(((thinkEndedAt || Date.now()) - thinkStartedAt) / 1000)) : 0
+          aiEl.insertBefore(thinkDetails(thinkAll, false, thinkSecs), aiEl.firstChild)
         }
         aiEl.classList.remove('kc-streaming')
         markOutlineDirty()

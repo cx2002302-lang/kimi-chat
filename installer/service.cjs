@@ -25,7 +25,7 @@ const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.8.1'
+const VERSION = '0.8.2'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -454,6 +454,9 @@ async function handleChat(req, res, id, body) {
 
   let full = ''
   let upstreamOk = false
+  let thinkFull = '' // 思考全文（累计，落盘上限 20k 字）
+  let thinkStartedAt = 0
+  let thinkEndedAt = 0
   try {
     const baseMsgs = [{ role: 'system', content: cfg.system_prompt }].concat(history)
     let round = 0
@@ -496,11 +499,15 @@ async function handleChat(req, res, id, body) {
           const choice = j && j.choices && j.choices[0]
           if (choice && choice.finish_reason) finishReason = choice.finish_reason
           const delta = choice && choice.delta
-          // 正文进消息流；reasoning 单独以 think 事件转发（前端折叠展示，不落盘）
+          // 正文进消息流；reasoning 单独以 think 事件转发并累计（落盘供历史折叠展示）
           const piece = delta && delta.content
-          if (piece) { full += piece; sseSend(res, { delta: piece }) }
+          if (piece) { if (thinkStartedAt && !thinkEndedAt) thinkEndedAt = Date.now(); full += piece; sseSend(res, { delta: piece }) }
           const reasoning = delta && (delta.reasoning_content || delta.reasoning)
-          if (reasoning) sseSend(res, { think: reasoning })
+          if (reasoning) {
+            if (!thinkStartedAt) thinkStartedAt = Date.now()
+            if (thinkFull.length < 20000) thinkFull += reasoning
+            sseSend(res, { think: reasoning })
+          }
         }
       }
       try { fs.appendFileSync(path.join(STATE_DIR, 'watch.log'), new Date().toISOString() + ' chat-finish round=' + round + ' reason=' + (finishReason || 'none') + ' chars=' + full.length + ' model=' + backend.model + '\n') } catch {}
@@ -513,9 +520,12 @@ async function handleChat(req, res, id, body) {
     return
   }
 
-  // 落盘 assistant 消息（去掉 think 部分，节省存储；原文已流给浏览器）
+  // 落盘 assistant 消息：content 去 think；think 全文与时长单独存（历史折叠展示用）
   const clean = stripThink(full)
-  topic.messages.push({ role: 'assistant', content: clean || full, ts: new Date().toISOString() })
+  const thinkSecs = thinkStartedAt ? Math.max(1, Math.round(((thinkEndedAt || Date.now()) - thinkStartedAt) / 1000)) : 0
+  const asstMsg = { role: 'assistant', content: clean || full, ts: new Date().toISOString() }
+  if (thinkFull) { asstMsg.think = thinkFull; if (thinkSecs) asstMsg.think_secs = thinkSecs }
+  topic.messages.push(asstMsg)
 
   // 首轮对话后自动起名
   let newTitle = null
