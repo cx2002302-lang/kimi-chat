@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.9.0'
+  var VERSION = '0.9.1'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -1235,15 +1235,11 @@
     }
 
     // ---------- 界面偏好 / 右侧信息栏 ----------
-    function resolveColorMode() {
-      if (uiCfg.color_mode === 'dark' || uiCfg.color_mode === 'light') return uiCfg.color_mode
-      var de = document.documentElement
-      var ds = (de.dataset.colorScheme || de.dataset.theme || '').toLowerCase()
-      if (ds === 'dark' || ds === 'light') return ds
-      if (de.classList && de.classList.contains('dark')) return 'dark'
-      try { return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' } catch (e) { return 'light' }
-    }
     function applyUiCfg() {
+      // 配色模式：auto 跟随宿主；浅色/深色通过宿主属性强制覆盖（含样式色板）
+      var scheme = uiCfg.color_mode === 'dark' ? 'dark' : uiCfg.color_mode === 'light' ? 'light' : ''
+      if (scheme) host.setAttribute('data-kc-scheme', scheme)
+      else host.removeAttribute('data-kc-scheme')
       var showRail = uiCfg.right_rail && !railHidden
       if (els.rightrail) els.rightrail.classList.toggle('kc-rr-off', !showRail)
       var t = root.querySelector('.kc-rail-toggle')
