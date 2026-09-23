@@ -43,7 +43,8 @@ It also embeds the **VCP (Visual Card Protocol)** renderer adapted from [dsh-raw
 - **Content navigator — 1:1 replica of kimi web's native conversation-toc** (DOM & styles sampled from the real thing): at the chat's right edge rests a slim 13px strip of vertical bars, one per question (3×14px rounded bars, the active one taller at 18px and solid theme-blue); hover the 75px hot zone and after a 0.25s intent delay text labels slide out (13px, right-aligned, up to 220px wide, native easing `cubic-bezier(0.16,1,0.3,1)`); rows brighten on hover, click to jump and the active marker follows scrolling; auto-hidden on narrow windows
 - **No visible scrollbars** anywhere in the module (scrolling still works) — matches the native calm look
 - **Right info rail**: topic info / auto outline (click to locate) / quick actions; toggleable, auto-hides <1500px
-- Plugin **settings tab** inside kimi web Settings (answer style presets ×5, color mode, think collapse, image/TTS providers, system prompt); thinking streams collapse into a fold instead of flooding the chat
+- Plugin **settings tab** inside kimi web Settings (answer style: 12 dsh aesthetic-system themes, color mode, think collapse, image/TTS providers, system prompt); thinking streams collapse into a fold instead of flooding the chat
+- **Reply style profiles (new)** — six dimensions (verbosity / visual ratio / tone / emoji / structure / examples) compiled into the system prompt; configured at three levels with field-level merge and priority **chat > folder (ancestor chain) > default**, via Settings, the folder ⋯ menu and the chat header 🎨 button
 - **Discussion-first system prompt**: the assistant answers with ` ```vcp ` cards — HTML/SVG diagrams, mind maps, mermaid charts, KaTeX formulas, clickable follow-up buttons
 
 ### ② 🗂️ Topic management (independent from sessions)
@@ -136,7 +137,7 @@ node <plugin>/installer/uninstall.cjs   # stop watchdog + restore Web UI
 
 ## 🧪 Tests
 
-13 suites, 260 checks, all green: unit (32) + service (25) + heal (10) + chat-continue (5) + img-proxy (8) + browser regression (14) + security (13) + folder picker (26) + v0.7.2 layout (20) + v0.7.3 native look (12) + v0.7.4 folders & navigator (51) + v0.8.1 styles & think-bar (36) + v0.8.2 buttons & think-fold (12).
+15 suites, 275 checks, all green: unit (32) + service (25) + heal (10) + chat-continue (5) + img-proxy (8) + browser regression (14) + security (13) + folder picker (26) + v0.7.2 layout (20) + v0.7.3 native look (12) + v0.7.4 folders & navigator (51) + v0.8.1 styles & think-bar (36) + v0.8.2 buttons & think-fold (12) + style-profile cascade (7) + v0.9.0 style UI (8).
 
 ```bash
 node tests/unit.test.mjs

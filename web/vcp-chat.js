@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.8.2'
+  var VERSION = '0.9.0'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -501,6 +501,7 @@
         '        <span class="kc-chattitle" title="双击重命名"></span>' +
         '        <div class="kc-chat-actions">' +
         '          <button class="kc-hbtn kc-hbtn-primary" data-act="promote" title="以此话题开展一个新的 Kimi Code 会话">⇗ 开展会话</button>' +
+        '          <button class="kc-hbtn" data-act="style" title="本聊天的答复风格（覆盖文件夹/默认）">🎨 风格</button>' +
         '          <button class="kc-hbtn" data-act="copyid" title="复制聊天 ID">⧉ 聊天ID</button>' +
         '          <button class="kc-hbtn" data-act="export" title="导出 Markdown">⤓ 导出</button>' +
         '          <button class="kc-hbtn" data-act="clear" title="清空消息">🗑 清空</button>' +
@@ -561,6 +562,7 @@
         // ---- 文件夹菜单（浮层） ----
         '<div class="kc-menu kc-fmenu" hidden>' +
         '  <button data-fact="newtopic">💬 新建话题（在此文件夹）</button>' +
+        '  <button data-fact="style">🎨 答复风格…</button>' +
         '  <button data-fact="newsub">📁 新建子文件夹</button>' +
         '  <button data-fact="rename">✏️ 重命名</button>' +
         '  <button data-fact="delete" class="kc-danger">🗑 删除文件夹（聊天移到上级）</button>' +
@@ -689,9 +691,10 @@
         // 立即重渲染会把拖拽源从 DOM 移除，dragend 丢失、原生拖拽会话卡死，之后再也拖不动
         setTimeout(function () { moveTopic(tid, fid) }, 0)
       })
-      // Esc 关闭（设置弹窗优先）
+      // Esc 关闭（答复风格弹窗 > 设置弹窗 > 模块）
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape' || !open) return
+        if (els.styledlg && !els.styledlg.hidden) { els.styledlg.hidden = true; return }
         if (els.setmask && !els.setmask.hidden) { closeSettings(); return }
         close()
       })
@@ -740,6 +743,7 @@
         else if (act === 'send') sendChat()
         else if (act === 'stop') stopChat()
         else if (act === 'promote' && cur) promote(cur.id)
+        else if (act === 'style' && cur) openStyleDialog('topic', cur.id)
         else if (act === 'copyid' && cur) copyText(cur.id, '聊天 ID 已复制：' + cur.id)
         else if (act === 'export' && cur) exportTopic(cur.id)
         else if (act === 'clear' && cur) clearTopic(cur.id)
@@ -899,6 +903,7 @@
       var id = menuFolderId
       if (!id) return
       if (act === 'newtopic') createTopicIn(id)
+      else if (act === 'style') openStyleDialog('folder', id)
       else if (act === 'newsub') createFolder(id)
       else if (act === 'rename') renameFolder(id)
       else if (act === 'delete') deleteFolder(id)
@@ -1252,26 +1257,14 @@
     // 答复卡片配色：把 VCPColorEngine 调色板作为 CSS 变量挂到消息容器，
     // 标题/引用/表格/代码等 Markdown 元素的强调色全部跟随所选样式
     function applyMsgStyle(el) {
-      if (!uiCfg.card_style) return
-      var engine = window.__vcpColor || window.VCPColorEngine
-      if (!engine || typeof engine.generate !== 'function') {
-        // 配色引擎按需加载，就绪后补一次（防首次渲染时序问题）
-        if (!el.__kcStyleWait) {
-          el.__kcStyleWait = true
-          ensureVendor().then(function () { el.__kcStyleWait = false; applyMsgStyle(el) }).catch(function () { el.__kcStyleWait = false })
-        }
+      if (!uiCfg.card_style) {
+        el.classList.remove('kc-styled')
+        el.removeAttribute('data-kcstyle')
         return
       }
-      try {
-        var pal = engine.generate({ movement: uiCfg.card_style, mode: resolveColorMode() })
-        var hex = pal.hex || {}
-        for (var k in hex) {
-          if (!Object.prototype.hasOwnProperty.call(hex, k)) continue
-          var kebab = k.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase() })
-          el.style.setProperty('--vcp-' + kebab, hex[k])
-        }
-        el.classList.add('kc-styled')
-      } catch (e) {}
+      // dsh 美学系统：色板由 CSS 按 data-kcstyle 提供（不再依赖配色引擎随机生成）
+      el.setAttribute('data-kcstyle', uiCfg.card_style)
+      el.classList.add('kc-styled')
     }
     function updateRail() {
       if (!els.rrInfo) return
@@ -1350,7 +1343,21 @@
       '.kc-setform .kc-fbtns button.kc-fprimary{background:#10a37f;border-color:#10a37f;color:#fff}' +
       '.kc-setform .kc-fbtns button:hover{filter:brightness(1.08)}' +
       '.kc-setform .kc-fcheck{flex:0 0 auto;width:16px;height:16px}'
-    var KC_STYLE_OPTS = [['', '原生（不施加主题）'], ['editorial', 'Editorial · 编辑排版'], ['chiaroscuro', 'Chiaroscuro · 明暗油画'], ['fauvism', 'Fauvism · 野兽派'], ['cyberpunk', 'Cyberpunk · 赛博朋克'], ['wabi_sabi', 'Wabi-sabi · 侘寂']]
+    var KC_STYLE_OPTS = [
+      ['', '原生（不施加主题）'],
+      ['porcelain-data', '青瓷数据 · 理性/学术'],
+      ['wire-news', '编辑部红 · 新闻/榜单'],
+      ['wabi-sabi', '侘寂 · 文学/禅意'],
+      ['ink-letter', '笺信 · 书信/诗文'],
+      ['header-framing', '顶栏装帧 · 长文封面'],
+      ['y2k-glass', 'Y2K 玻璃 · 未来/潮流'],
+      ['warm-minimal', '暖调极简 · 轻奢/商务'],
+      ['editorial-minimal', '编辑极简 · 杂志/深度'],
+      ['cyberpunk-neon', '赛博朋克 · 科技/终端'],
+      ['pop-flat', '波普色块 · 年轻/电商'],
+      ['brutalism', '粗野主义 · 先锋/态度'],
+      ['maiden-diary', '少女手账 · 日记/可爱']
+    ]
     var cfgFormData = null
     function renderSettingsForm(container) {
       container.innerHTML = '<div class="kc-setform">加载中…</div>'
@@ -1364,6 +1371,8 @@
           '<div class="kc-setform">' +
           '<h5>界面</h5>' +
           '<div class="kc-frow"><label>答复样式</label><select data-f="card_style">' + opts + '</select></div>' +
+          '<h5>答复风格（默认档 · 聊天/文件夹可覆盖）</h5>' +
+          styleRowsHtml(j.ui.style_profile || {}, '不设置') +
           '<div class="kc-frow"><label>配色模式</label><select data-f="color_mode">' +
             '<option value="auto"' + (j.ui.color_mode === 'auto' ? ' selected' : '') + '>跟随 kimi web</option>' +
             '<option value="light"' + (j.ui.color_mode === 'light' ? ' selected' : '') + '>浅色</option>' +
@@ -1409,6 +1418,9 @@
         else if (f.indexOf('image.') === 0) { if (v !== '') out.image[f.slice(6)] = v }
         else if (f.indexOf('tts.') === 0) { if (v !== '') out.tts[f.slice(4)] = v }
       })
+      // 答复风格默认档（六个下拉，全空 = 不设置）
+      var sp = collectStyleProfile(container)
+      out.ui.style_profile = Object.keys(sp).length ? sp : {}
       return out
     }
     function onSettingsAction(act) {
@@ -1441,6 +1453,87 @@
       renderSettingsForm(els.setbody)
     }
     function closeSettings() { els.setmask.hidden = true }
+
+    // ---------- 答复风格（多元素配置；聊天 > 文件夹 > 默认 三层级联） ----------
+    var STYLE_DIMS = [
+      ['verbosity', '详略', [['concise', '简洁'], ['normal', '适中'], ['detailed', '详尽']]],
+      ['visual', '图文占比', [['text', '文字为主'], ['balanced', '均衡'], ['visual', '多图']]],
+      ['tone', '语气', [['professional', '专业'], ['friendly', '亲切'], ['witty', '轻松幽默'], ['rigorous', '严谨']]],
+      ['emoji', 'Emoji', [['none', '禁用'], ['rare', '极少'], ['some', '适量'], ['rich', '丰富']]],
+      ['depth', '结构', [['bluf', '结论先行'], ['layered', '层层展开'], ['deep', '深入论证']]],
+      ['examples', '举例', [['rare', '少'], ['some', '适中'], ['rich', '多']]]
+    ]
+    function styleRowsHtml(profile, inheritLabel) {
+      profile = profile || {}
+      var html = ''
+      for (var i = 0; i < STYLE_DIMS.length; i++) {
+        var d = STYLE_DIMS[i]
+        html += '<div class="kc-frow"><label>' + d[1] + '</label><select data-sf="' + d[0] + '">'
+        html += '<option value=""' + (!profile[d[0]] ? ' selected' : '') + '>' + inheritLabel + '</option>'
+        for (var k = 0; k < d[2].length; k++) {
+          html += '<option value="' + d[2][k][0] + '"' + (profile[d[0]] === d[2][k][0] ? ' selected' : '') + '>' + d[2][k][1] + '</option>'
+        }
+        html += '</select></div>'
+      }
+      return html
+    }
+    function collectStyleProfile(container) {
+      var out = {}
+      Array.prototype.forEach.call(container.querySelectorAll('[data-sf]'), function (sel) {
+        if (sel.value) out[sel.getAttribute('data-sf')] = sel.value
+      })
+      return out
+    }
+    var styleDlgCtx = null
+    function openStyleDialog(type, id) {
+      styleDlgCtx = { type: type, id: id }
+      var profile = {}
+      var title = '答复风格'
+      if (type === 'folder') {
+        var f = findFolder(id) || {}
+        profile = f.style_profile || {}
+        title = '答复风格 · 文件夹「' + (f.name || '') + '」'
+      } else if (type === 'topic') {
+        profile = (cur && cur.style_profile) || {}
+        title = '答复风格 · 本聊天（覆盖文件夹与默认）'
+      }
+      if (!els.styledlg) {
+        var mask = document.createElement('div')
+        mask.className = 'kc-setmask'
+        mask.hidden = true
+        mask.innerHTML = '<div class="kc-setdlg" role="dialog" aria-label="答复风格">' +
+          '<header class="kc-sethead"><span class="kc-styledlg-title"></span>' +
+          '<button class="kc-icon-btn" data-sact="close" title="关闭">✕</button></header>' +
+          '<div class="kc-setbody"><div class="kc-setform kc-styledlg-form"></div>' +
+          '<div class="kc-fhint2" style="margin:6px 2px 0;opacity:.55;font-size:11px">「跟随上层」= 用文件夹（或默认）的配置；本聊天的设置优先级最高。保存后从下一条消息生效。</div>' +
+          '<div style="display:flex;gap:8px;margin-top:14px"><button class="kc-btn" data-sdlg="save">保存</button>' +
+          '<button class="kc-btn" data-sdlg="clear">清除（回继承）</button></div></div></div>'
+        root.appendChild(mask)
+        mask.addEventListener('click', function (e) {
+          if (e.target === mask) { mask.hidden = true; return }
+          var b = e.target.closest('[data-sdlg]')
+          if (!b) return
+          var act = b.getAttribute('data-sdlg')
+          if (act === 'close') { mask.hidden = true; return }
+          if (!styleDlgCtx) return
+          var prof = act === 'clear' ? {} : collectStyleProfile(mask)
+          var p
+          if (styleDlgCtx.type === 'folder') {
+            p = svcJson('/api/folders/' + styleDlgCtx.id, { method: 'PATCH', body: JSON.stringify({ style_profile: prof }) })
+              .then(function () { return loadFolders() })
+          } else {
+            p = svcJson('/api/topics/' + styleDlgCtx.id, { method: 'PATCH', body: JSON.stringify({ style_profile: prof }) })
+              .then(function () { if (cur && cur.id === styleDlgCtx.id) cur.style_profile = Object.keys(prof).length ? prof : undefined })
+          }
+          p.then(function () { mask.hidden = true; toast(act === 'clear' ? '已回继承（下一条消息生效）' : '答复风格已保存（下一条消息生效）') })
+            .catch(function (err) { toast('保存失败：' + err.message) })
+        })
+        els.styledlg = mask
+      }
+      els.styledlg.querySelector('.kc-styledlg-title').textContent = title
+      els.styledlg.querySelector('.kc-styledlg-form').innerHTML = styleRowsHtml(profile, '跟随上层')
+      els.styledlg.hidden = false
+    }
 
     // ---------- kimi 设置页注入「kimi-chat」页签 ----------
     // kimi web 设置弹窗本身不支持插件注册页，这里用 DOM 注入一个页签（宿主重渲染时自动补回）
@@ -1861,6 +1954,7 @@
     function close() {
       if (!open) return
       open = false
+      if (els.styledlg) els.styledlg.hidden = true
       host.style.display = 'none'
       if (location.hash === '#' + MODULE_HASH) {
         try { history.replaceState(null, '', location.pathname + location.search) } catch (e) { location.hash = '' }

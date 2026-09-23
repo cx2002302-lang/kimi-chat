@@ -25,7 +25,7 @@ const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.8.2'
+const VERSION = '0.9.0'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -103,6 +103,9 @@ function loadConfig() {
     data.image = Object.assign({}, DEFAULT_CONFIG.image, j.image)
     data.tts = Object.assign({}, DEFAULT_CONFIG.tts, j.tts)
     data.ui = Object.assign({}, DEFAULT_CONFIG.ui, j.ui)
+    // 旧版答复样式 slug → dsh 美学系统新 slug 迁移
+    const CARD_STYLE_MIGRATE = { editorial: 'editorial-minimal', cyberpunk: 'cyberpunk-neon', wabi_sabi: 'wabi-sabi', chiaroscuro: 'editorial-minimal', fauvism: 'pop-flat' }
+    if (data.ui.card_style && CARD_STYLE_MIGRATE[data.ui.card_style]) data.ui.card_style = CARD_STYLE_MIGRATE[data.ui.card_style]
     cfgCache = { at: st.mtimeMs, data }
     return data
   } catch {
@@ -111,6 +114,57 @@ function loadConfig() {
 }
 
 // ---------- 聊天后端解析（跟随 Kimi Code CLI 默认模型，可被 config.json 覆盖） ----------
+// ---------- 答复风格（style profile）：聊天 > 文件夹（沿祖先链） > 默认 三层级联 ----------
+const STYLE_FIELDS = ['verbosity', 'visual', 'tone', 'emoji', 'depth', 'examples']
+function cleanStyleProfile(p) {
+  if (!p || typeof p !== 'object') return null
+  const out = {}
+  for (const k of STYLE_FIELDS) {
+    const v = p[k]
+    if (typeof v === 'string' && v) out[k] = v.slice(0, 24)
+  }
+  return Object.keys(out).length ? out : null
+}
+const STYLE_TEXT = {
+  verbosity: { concise: '简洁——一句话能说清就不铺开，只保留必要论证', normal: '适中——结论加关键依据，不写教科书', detailed: '详尽——展开来龙去脉，允许分节与小结' },
+  visual: { text: '文字为主——只在最值得的地方配卡片，全篇至多一张', balanced: '均衡——适合图示的内容就配一张 VCP 卡片，图文交替', visual: '多图——尽量用卡片/SVG/图表承载，文字只做导语与串联' },
+  tone: { professional: '专业——中性、准确、克制', friendly: '亲切——像熟悉的朋友，可以口语化，不端架子', witty: '轻松幽默——允许机灵和玩笑，但不牺牲准确性', rigorous: '严谨——给依据和边界条件，避免断言' },
+  emoji: { none: '禁用 Emoji', rare: '极少——全篇至多 1 个', some: '适量——每屏最多 1 个，用来点睛', rich: '丰富——可以活跃使用，但不替代文字' },
+  depth: { bluf: '结论先行——先给结论，再给依据', layered: '层层展开——从直觉版本到精确版本逐步推进', deep: '深入论证——给出机制、反例与边界' },
+  examples: { rare: '少举例', some: '适中——关键抽象处给 1 个具体例子', rich: '多举例——尽量用例子和类比讲清' }
+}
+function resolveStyleProfile(cfg, topic) {
+  // 字段级合并：默认 → 最外层文件夹 → … → 最近一层文件夹 → 本聊天（后者非空字段覆盖前者）
+  const chain = []
+  let fid = (topic && topic.folder_id) || ''
+  const folders = readFolders()
+  const seen = {}
+  while (fid && !seen[fid]) {
+    seen[fid] = 1
+    const f = findFolder(folders, fid)
+    if (!f) break
+    chain.unshift(f)
+    fid = f.parentId || ''
+  }
+  const merged = {}
+  const sources = [cleanStyleProfile(cfg.ui && cfg.ui.style_profile)]
+    .concat(chain.map(function (f) { return cleanStyleProfile(f.style_profile) }))
+    .concat([cleanStyleProfile(topic && topic.style_profile)])
+  for (const src of sources) if (src) Object.assign(merged, src)
+  return Object.keys(merged).length ? merged : null
+}
+function stylePromptBlock(profile) {
+  if (!profile) return ''
+  const lines = []
+  for (const k of STYLE_FIELDS) {
+    const v = profile[k]
+    const t = v && STYLE_TEXT[k] && STYLE_TEXT[k][v]
+    if (t) lines.push('- ' + t)
+  }
+  if (!lines.length) return ''
+  return '\n\n【本轮答复风格】（优先级高于上方通用纪律中的风格默认值）\n' + lines.join('\n')
+}
+
 // ---------- Kimi Code CLI 注册表（providers + models，与会话同源） ----------
 let registryCache = { at: 0, result: undefined }
 function loadCliRegistry() {
@@ -458,7 +512,8 @@ async function handleChat(req, res, id, body) {
   let thinkStartedAt = 0
   let thinkEndedAt = 0
   try {
-    const baseMsgs = [{ role: 'system', content: cfg.system_prompt }].concat(history)
+    const styleProfile = resolveStyleProfile(cfg, topic)
+    const baseMsgs = [{ role: 'system', content: cfg.system_prompt + stylePromptBlock(styleProfile) }].concat(history)
     let round = 0
     // finish_reason=length（长度上限把回复拦腰截断）时自动续写，最多 3 轮，保证「说完再交互」
     for (round = 0; round < 3; round++) {
@@ -826,6 +881,12 @@ async function route(req, res) {
       })
       // card_style 的空字符串（原生模式）是合法值，不能被 pick 的「跳过空串」规则吞掉
       if (j.ui.card_style !== undefined && j.ui.card_style !== null) cur.ui.card_style = String(j.ui.card_style)
+      // 答复风格默认档（最底层；聊天/文件夹可覆盖）
+      if (j.ui.style_profile !== undefined) {
+        const sp = cleanStyleProfile(j.ui.style_profile)
+        if (sp) cur.ui.style_profile = sp
+        else delete cur.ui.style_profile
+      }
     }
     if (j.auto_token !== undefined) cur.auto_token = !!j.auto_token
     if (typeof j.system_prompt === 'string' && j.system_prompt.trim()) cur.system_prompt = j.system_prompt
@@ -942,6 +1003,12 @@ async function route(req, res) {
         else if (findFolder(readFolders(), fid)) t.folder_id = fid
         else return sendJson(res, 400, { error: '文件夹不存在：' + fid })
       }
+      // 答复风格（聊天级，覆盖文件夹/默认；{} 或 null = 清除回继承）
+      if (body.style_profile !== undefined) {
+        const sp = cleanStyleProfile(body.style_profile)
+        if (sp) t.style_profile = sp
+        else delete t.style_profile
+      }
       writeTopic(t)
       return sendJson(res, 200, { ok: true })
     }
@@ -1008,6 +1075,8 @@ async function route(req, res) {
     if (parentId && !findFolder(items, parentId)) return sendJson(res, 400, { error: '父文件夹不存在' })
     const now = new Date().toISOString()
     const f = { id: newFolderId(), name, parentId, collapsed: false, created_at: now, updated_at: now }
+    const spNew = cleanStyleProfile(body.style_profile)
+    if (spNew) f.style_profile = spNew
     items.push(f)
     writeFolders(items)
     return sendJson(res, 200, f)
@@ -1022,6 +1091,12 @@ async function route(req, res) {
       const body = await readBody(req)
       if (typeof body.name === 'string' && body.name.trim()) f.name = body.name.trim().slice(0, 60)
       if (typeof body.collapsed === 'boolean') f.collapsed = body.collapsed
+      // 答复风格（文件夹级，覆盖默认；子文件夹/聊天可再覆盖）
+      if (body.style_profile !== undefined) {
+        const sp = cleanStyleProfile(body.style_profile)
+        if (sp) f.style_profile = sp
+        else delete f.style_profile
+      }
       if (typeof body.parentId === 'string') {
         const pid = body.parentId
         if (pid && !findFolder(items, pid)) return sendJson(res, 400, { error: '父文件夹不存在' })
