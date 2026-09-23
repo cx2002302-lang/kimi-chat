@@ -25,7 +25,7 @@ const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.7.9'
+const VERSION = '0.8.0'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -925,6 +925,45 @@ async function route(req, res) {
       if (tp && fs.existsSync(tp)) fs.unlinkSync(tp)
       return sendJson(res, 200, { ok: true })
     }
+  }
+
+  // 同源图片代理：卡片/正文里的外链 <img> 会被页面 CSP 拦截，改走本服务转发
+  //（GET + access_token 认证；仅放行图片 content-type，防借代理注入 HTML；拒绝云元数据地址）
+  if (p === '/api/img-proxy' && req.method === 'GET') {
+    const target = u.searchParams.get('url') || ''
+    let dest
+    try { dest = new URL(target) } catch { return sendJson(res, 400, { error: '无效 url' }) }
+    if (dest.protocol !== 'http:' && dest.protocol !== 'https:') return sendJson(res, 400, { error: '仅支持 http(s)' })
+    if (/^169\.254\./.test(dest.hostname) || dest.hostname === 'metadata.google.internal') {
+      return sendJson(res, 400, { error: '不允许的地址' })
+    }
+    try {
+      const up = await fetch(dest, {
+        headers: { 'User-Agent': 'kimi-chat-imgproxy/1.0', Accept: 'image/*,*/*;q=0.8' },
+        redirect: 'follow', signal: AbortSignal.timeout(15000)
+      })
+      if (!up.ok) return sendJson(res, 502, { error: '上游 HTTP ' + up.status })
+      const ct = (up.headers.get('content-type') || '').split(';')[0].trim()
+      if (ct && !/^image\//i.test(ct)) return sendJson(res, 415, { error: '非图片内容：' + ct })
+      const len = parseInt(up.headers.get('content-length') || '0', 10)
+      if (len > 12 * 1024 * 1024) return sendJson(res, 413, { error: '图片过大（>12MB）' })
+      res.writeHead(200, { 'Content-Type': ct || 'application/octet-stream', 'Cache-Control': 'private, max-age=86400' })
+      if (!up.body) { res.end(); return }
+      const reader = up.body.getReader()
+      let total = 0
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        total += value.length
+        if (total > 12 * 1024 * 1024) { res.destroy(); return }
+        res.write(Buffer.from(value))
+      }
+      res.end()
+    } catch (e) {
+      if (!res.headersSent) return sendJson(res, 502, { error: '代理失败：' + (e.message || e) })
+      try { res.destroy() } catch {}
+    }
+    return
   }
 
   if (p === '/api/image' && req.method === 'POST') {

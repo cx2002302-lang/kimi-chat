@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.7.9'
+  var VERSION = '0.8.0'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -236,6 +236,7 @@
           wrap.className = 'vcp-card'
           wrap.setAttribute('data-vcp-card', '1')
           wrap.appendChild(frag)
+          proxyExternalImgs(wrap)
           slot.replaceWith(wrap)
           ensureVendor().then(function () { window.VCPRender.enhance(wrap) })
         } catch (err) {
@@ -248,6 +249,17 @@
     }
   }
   // 渲染一条消息内容到元素（assistant: markdown+vcp；user: 纯文本）
+  // 外链图片会被页面 CSP 拦截：改走本地服务同源代理（GET + access_token）
+  function proxyExternalImgs(rootEl) {
+    if (!rootEl || !rootEl.querySelectorAll) return
+    var imgs = rootEl.querySelectorAll('img[src]')
+    for (var i = 0; i < imgs.length; i++) {
+      var s = imgs[i].getAttribute('src') || ''
+      if (/^https?:\/\//i.test(s) && s.indexOf(location.origin + '/') !== 0 && s.indexOf(SVC + '/') !== 0) {
+        imgs[i].setAttribute('src', svcUrl('/api/img-proxy?url=' + encodeURIComponent(s)))
+      }
+    }
+  }
   function renderInto(el, msg) {
     el.innerHTML = ''
     el.__vcpBlocks = null
@@ -255,6 +267,7 @@
       var r = mdRender(msg.content)
       el.__vcpBlocks = r.blocks
       el.innerHTML = r.html
+      proxyExternalImgs(el)
       hydrateVcpSlots(el)
     } else {
       el.textContent = msg.content || ''
@@ -1423,7 +1436,20 @@
         markOutlineDirty()
         return
       }
-      msgs.forEach(function (m) { appendMsgEl(m) })
+      msgs.forEach(function (m) {
+        // 逐条防护：单条渲染异常时降级纯文本，绝不连坐后面的消息（「整轮消失」类问题的保险）
+        try { appendMsgEl(m) } catch (e) {
+          try {
+            var el = document.createElement('div')
+            el.className = 'kc-msg kc-msg-' + (m.role === 'user' ? 'user' : 'ai')
+            var c = document.createElement('div')
+            c.className = 'kc-msg-content'
+            c.textContent = m.content || ''
+            el.appendChild(c)
+            els.msgs.appendChild(el)
+          } catch (e2) {}
+        }
+      })
       updateRail()
       scrollBottom()
     }
@@ -1657,7 +1683,8 @@
         // 流式期间是纯文本，结束后做一次完整 Markdown/VCP 渲染；思考内容折叠
         var sp = splitThink(acc)
         var clean = sp.answer || acc.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim()
-        renderInto(aiEl, { role: 'assistant', content: clean || acc })
+        try { renderInto(aiEl, { role: 'assistant', content: clean || acc }) }
+        catch (e) { aiEl.textContent = clean || acc } // 渲染失败兜底：至少保住全文文本
         aiEl._kcRaw = clean || acc
         applyMsgStyle(aiEl)
         var thinkAll = (thinkAcc + (thinkAcc && sp.think ? '\n' : '') + sp.think).trim()
