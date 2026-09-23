@@ -25,7 +25,7 @@ const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.9.1'
+const VERSION = '0.9.2'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -513,7 +513,11 @@ async function handleChat(req, res, id, body) {
   let thinkEndedAt = 0
   try {
     const styleProfile = resolveStyleProfile(cfg, topic)
-    const baseMsgs = [{ role: 'system', content: cfg.system_prompt + stylePromptBlock(styleProfile) }].concat(history)
+    // 深色环境下提醒模型用深色卡片（前端渲染层还有强制兜底，双保险）
+    const schemeHint = body.scheme === 'dark'
+      ? '\n\n【显示环境】当前为深色模式：VCP 卡片请使用深色底（正文对比度 ≥4.5:1），避免大面积浅色/白底。'
+      : ''
+    const baseMsgs = [{ role: 'system', content: cfg.system_prompt + stylePromptBlock(styleProfile) + schemeHint }].concat(history)
     let round = 0
     // finish_reason=length（长度上限把回复拦腰截断）时自动续写，最多 3 轮，保证「说完再交互」
     for (round = 0; round < 3; round++) {

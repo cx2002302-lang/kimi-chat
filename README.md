@@ -137,7 +137,7 @@ node <plugin>/installer/uninstall.cjs   # stop watchdog + restore Web UI
 
 ## 🧪 Tests
 
-15 suites, 277 checks, all green: unit (32) + service (25) + heal (10) + chat-continue (5) + img-proxy (8) + browser regression (14) + security (13) + folder picker (26) + v0.7.2 layout (20) + v0.7.3 native look (12) + v0.7.4 folders & navigator (51) + v0.8.1 styles & think-bar (36) + v0.8.2 buttons & think-fold (12) + style-profile cascade (7) + v0.9.0 style UI & color mode (10).
+16 suites, 287 checks, all green: unit (32) + service (25) + heal (10) + chat-continue (5) + img-proxy (8) + browser regression (14) + security (13) + folder picker (26) + v0.7.2 layout (20) + v0.7.3 native look (12) + v0.7.4 folders & navigator (51) + v0.8.1 styles & think-bar (36) + v0.8.2 buttons & think-fold (12) + style-profile cascade (9) + v0.9.0 style UI & color mode (10) + v0.9.2 card dark adapt (5).
 
 ```bash
 node tests/unit.test.mjs

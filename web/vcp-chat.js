@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.9.1'
+  var VERSION = '0.9.2'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -267,6 +267,33 @@
     return { html: html, blocks: blocks }
   }
   // 把容器里的 .kc-vcp-slot 替换为渲染后的 VCP 卡片（开关关闭/引擎缺失时降级为源码）
+  // 卡片深色适配用的配色判定：强制值读宿主属性（chatModule 维护），否则跟随宿主主题
+  function cardScheme() {
+    var h = document.getElementById('kc-module-host')
+    var forced = h && h.getAttribute('data-kc-scheme')
+    if (forced) return forced
+    var de = document.documentElement
+    var ds = (de.dataset.colorScheme || de.dataset.theme || '').toLowerCase()
+    if (ds === 'dark' || ds === 'light') return ds
+    if (de.classList && de.classList.contains('dark')) return 'dark'
+    try { return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' } catch (e) { return 'light' }
+  }
+  // 深色环境下的卡片适配：模型硬编码的浅色底（白卡）在深色风格下刺眼——
+  // 根容器与内联浅色块强制改用当前风格色板（--vcp-*，未选风格时给中性深色兜底）
+  function darkAdaptCard(wrap) {
+    if (cardScheme() !== 'dark') return
+    var rootEl = wrap.querySelector('[id^="vcp-msg-"]') || wrap.firstElementChild
+    if (!rootEl || !rootEl.id) return
+    if (rootEl.getAttribute('data-vcp-mode') === 'dark') return // 卡片自带深色模式，尊重原设计
+    var uid = rootEl.id
+    var LIGHT = ['#ffffff', '#fff', '#fefefe', '#fafafa', '#fbfbfb', '#f9f9f9', '#f8f8f8', '#f7f7f7', '#f6f6f6', '#f5f5f5', '#f4f4f5', '#f0f0f0', 'white', 'rgb(255, 255, 255)', 'rgb(255,255,255)']
+    var sel = LIGHT.map(function (c) { return '#' + uid + ' [style*="' + c + '"]' }).join(',')
+    var st = document.createElement('style')
+    st.textContent =
+      '#' + uid + '{background:var(--vcp-base,#17171a) !important;color:var(--vcp-text-primary,#e9e9ec) !important}' +
+      sel + '{background:var(--vcp-surface,#202027) !important;color:var(--vcp-text-primary,#e9e9ec) !important}'
+    wrap.appendChild(st)
+  }
   function hydrateVcpSlots(container) {
     var slots = container.querySelectorAll('.kc-vcp-slot')
     for (var i = 0; i < slots.length; i++) {
@@ -292,9 +319,11 @@
           wrap.setAttribute('data-vcp-card', '1')
           wrap.appendChild(frag)
           proxyExternalImgs(wrap)
+          darkAdaptCard(wrap)
           slot.replaceWith(wrap)
           ensureVendor().then(function () { window.VCPRender.enhance(wrap) })
         } catch (err) {
+          if (typeof console !== 'undefined') console.error('[kimi-chat] vcp 卡片渲染失败，降级为源码：', err)
           var pre2 = document.createElement('pre')
           pre2.className = 'kc-code'
           pre2.innerHTML = '<code>' + esc(raw) + '</code>'
@@ -1235,10 +1264,19 @@
     }
 
     // ---------- 界面偏好 / 右侧信息栏 ----------
+    // 生效配色（auto 跟随宿主；浅色/深色为强制值）——卡片深色适配与请求提示共用
+    function effectiveScheme() {
+      if (uiCfg.color_mode === 'dark' || uiCfg.color_mode === 'light') return uiCfg.color_mode
+      var de = document.documentElement
+      var ds = (de.dataset.colorScheme || de.dataset.theme || '').toLowerCase()
+      if (ds === 'dark' || ds === 'light') return ds
+      if (de.classList && de.classList.contains('dark')) return 'dark'
+      try { return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' } catch (e) { return 'light' }
+    }
     function applyUiCfg() {
       // 配色模式：auto 跟随宿主；浅色/深色通过宿主属性强制覆盖（含样式色板）
-      var scheme = uiCfg.color_mode === 'dark' ? 'dark' : uiCfg.color_mode === 'light' ? 'light' : ''
-      if (scheme) host.setAttribute('data-kc-scheme', scheme)
+      var forced = uiCfg.color_mode === 'dark' || uiCfg.color_mode === 'light' ? uiCfg.color_mode : ''
+      if (forced) host.setAttribute('data-kc-scheme', forced)
       else host.removeAttribute('data-kc-scheme')
       var showRail = uiCfg.right_rail && !railHidden
       if (els.rightrail) els.rightrail.classList.toggle('kc-rr-off', !showRail)
@@ -1817,7 +1855,7 @@
       return fetch(SVC + '/api/topics/' + cur.id + '/chat', {
         method: 'POST',
         headers: svcHeaders(true),
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify({ content: text, scheme: effectiveScheme() }),
         signal: aborter.signal
       })
       }).then(function (res) {
