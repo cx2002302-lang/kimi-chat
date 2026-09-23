@@ -25,7 +25,7 @@ const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
 
-const VERSION = '0.7.8'
+const VERSION = '0.7.9'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -39,7 +39,8 @@ const CLI_CRED_FILE = path.join(HOME, 'credentials', 'kimi-code.json')
 const DEFAULT_PORT = 58931
 const MAX_BODY = 1024 * 1024
 const MAX_CONTEXT_MSGS = 40 // 送入模型的最近消息条数
-const MAX_REPLY_TOKENS = 8192
+// 输出上限（含推理 token——GLM 等推理模型的思考也计入 max_tokens，预算太小会让首轮长思考的话题正文被拦腰截断）
+const MAX_REPLY_TOKENS = 16384
 
 // ---------- 配置 ----------
 const DEFAULT_CONFIG = {
@@ -443,39 +444,57 @@ async function handleChat(req, res, id, body) {
   let full = ''
   let upstreamOk = false
   try {
-    const up = await callChatUpstream(backend, {
-      model: backend.model,
-      messages: [{ role: 'system', content: cfg.system_prompt }].concat(history),
-      stream: true,
-      max_tokens: MAX_REPLY_TOKENS
-    }, effort)
-    if (!up.ok || !up.body) {
-      const txt = await up.text().catch(() => '')
-      sseSend(res, { error: '聊天上游错误 HTTP ' + up.status + '：' + txt.slice(0, 300) })
-      res.end()
-      return
-    }
-    upstreamOk = true
-    const decoder = new TextDecoder()
-    let buf = ''
-    for await (const chunk of up.body) {
-      buf += decoder.decode(chunk, { stream: true })
-      const lines = buf.split('\n')
-      buf = lines.pop()
-      for (const line of lines) {
-        const t = line.trim()
-        if (!t.startsWith('data:')) continue
-        const payload = t.slice(5).trim()
-        if (payload === '[DONE]') continue
-        let j
-        try { j = JSON.parse(payload) } catch { continue }
-        const delta = j && j.choices && j.choices[0] && j.choices[0].delta
-        // 正文进消息流；reasoning 单独以 think 事件转发（前端折叠展示，不落盘）
-        const piece = delta && delta.content
-        if (piece) { full += piece; sseSend(res, { delta: piece }) }
-        const reasoning = delta && (delta.reasoning_content || delta.reasoning)
-        if (reasoning) sseSend(res, { think: reasoning })
+    const baseMsgs = [{ role: 'system', content: cfg.system_prompt }].concat(history)
+    let round = 0
+    // finish_reason=length（长度上限把回复拦腰截断）时自动续写，最多 3 轮，保证「说完再交互」
+    for (round = 0; round < 3; round++) {
+      const msgs = round === 0 ? baseMsgs : baseMsgs.concat([
+        { role: 'assistant', content: full },
+        { role: 'user', content: '继续。从刚才中断的地方直接接下去输出，不要重复已输出内容，不要重新组织开头。' }
+      ])
+      const up = await callChatUpstream(backend, {
+        model: backend.model,
+        messages: msgs,
+        stream: true,
+        max_tokens: MAX_REPLY_TOKENS
+      }, effort)
+      if (!up.ok || !up.body) {
+        if (round > 0 && full) break // 续写请求失败：保留已得内容，正常收尾
+        const txt = await up.text().catch(() => '')
+        sseSend(res, { error: '聊天上游错误 HTTP ' + up.status + '：' + txt.slice(0, 300) })
+        res.end()
+        return
       }
+      if (round > 0) { try { fs.appendFileSync(path.join(STATE_DIR, 'watch.log'), new Date().toISOString() + ' chat-continue round=' + round + '\n') } catch {} }
+      upstreamOk = true
+      const decoder = new TextDecoder()
+      let buf = ''
+      let finishReason = null
+      const lenAtStart = full.length
+      for await (const chunk of up.body) {
+        buf += decoder.decode(chunk, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop()
+        for (const line of lines) {
+          const t = line.trim()
+          if (!t.startsWith('data:')) continue
+          const payload = t.slice(5).trim()
+          if (payload === '[DONE]') continue
+          let j
+          try { j = JSON.parse(payload) } catch { continue }
+          const choice = j && j.choices && j.choices[0]
+          if (choice && choice.finish_reason) finishReason = choice.finish_reason
+          const delta = choice && choice.delta
+          // 正文进消息流；reasoning 单独以 think 事件转发（前端折叠展示，不落盘）
+          const piece = delta && delta.content
+          if (piece) { full += piece; sseSend(res, { delta: piece }) }
+          const reasoning = delta && (delta.reasoning_content || delta.reasoning)
+          if (reasoning) sseSend(res, { think: reasoning })
+        }
+      }
+      try { fs.appendFileSync(path.join(STATE_DIR, 'watch.log'), new Date().toISOString() + ' chat-finish round=' + round + ' reason=' + (finishReason || 'none') + ' chars=' + full.length + ' model=' + backend.model + '\n') } catch {}
+      // 未被长度截断，或续写无新内容（防死循环）→ 结束
+      if (finishReason !== 'length' || full.length === lenAtStart) break
     }
   } catch (e) {
     sseSend(res, { error: '上游请求失败：' + e.message })

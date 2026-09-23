@@ -136,7 +136,7 @@ node <插件目录>/installer/uninstall.cjs   # 停看门狗 + 还原 Web UI
 
 ## 🧪 测试
 
-9 套共 199 项全绿：unit 32 + service 25 + heal 10 + 浏览器回归 14 + 安全 13 + 文件夹选择器 26 + v0.7.2 布局 20 + v0.7.3 原生观感 12 + v0.7.4 文件夹与导航 47。
+10 套共 204 项全绿：unit 32 + service 25 + heal 10 + 截断续写 5 + 浏览器回归 14 + 安全 13 + 文件夹选择器 26 + v0.7.2 布局 20 + v0.7.3 原生观感 12 + v0.7.4 文件夹与导航 51。
 
 ```bash
 node tests/unit.test.mjs
