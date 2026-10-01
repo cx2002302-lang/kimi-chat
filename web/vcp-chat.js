@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.9.5'
+  var VERSION = '0.9.6'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -339,11 +339,33 @@
     var uid = rootEl.id
     var LIGHT = ['#ffffff', '#fff', '#fefefe', '#fafafa', '#fbfbfb', '#f9f9f9', '#f8f8f8', '#f7f7f7', '#f6f6f6', '#f5f5f5', '#f4f4f5', '#f0f0f0', 'white', 'rgb(255, 255, 255)', 'rgb(255,255,255)']
     var sel = LIGHT.map(function (c) { return '#' + uid + ' [style*="' + c + '"]' }).join(',')
-    var st = document.createElement('style')
-    st.textContent =
-      '#' + uid + '{background:var(--vcp-base,#17171a) !important;color:var(--vcp-text-primary,#e9e9ec) !important}' +
-      sel + '{background:var(--vcp-surface,#202027) !important;color:var(--vcp-text-primary,#e9e9ec) !important}'
-    wrap.appendChild(st)
+    if (!wrap.__kcDarkAdapted) {
+      var st = document.createElement('style')
+      st.textContent =
+        '#' + uid + '{background:var(--vcp-base,#17171a) !important;color:var(--vcp-text-primary,#e9e9ec) !important}' +
+        sel + '{background:var(--vcp-surface,#202027) !important;color:var(--vcp-text-primary,#e9e9ec) !important}' +
+        '.kc-nored{border-top-color:var(--vcp-border,#2E2B28) !important;border-right-color:var(--vcp-border,#2E2B28) !important;border-bottom-color:var(--vcp-border,#2E2B28) !important;border-left-color:var(--vcp-border,#2E2B28) !important}'
+      wrap.appendChild(st)
+      wrap.__kcDarkAdapted = true
+    }
+    // 红色系边框扫描：命中打标（.kc-nored 走注入规则），黄/金等暖色不匹配不受影响
+    var all = [rootEl].concat([].slice.call(rootEl.querySelectorAll('*')))
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i]
+      var cs = getComputedStyle(el)
+      var sides = [cs.borderTopColor, cs.borderRightColor, cs.borderBottomColor, cs.borderLeftColor]
+      var red = false
+      for (var k = 0; k < sides.length; k++) {
+        var c = rgbOf(sides[k])
+        if (c && c.a > 0.3 && c.r > 110 && c.r > c.g * 1.7 && c.r > c.b * 1.7) red = true
+      }
+      if (red) el.classList.add('kc-nored')
+    }
+  }
+  // 卡片适配总入口（幂等）：深色适配 + 对比度巡检
+  function polishCard(wrap) {
+    try { darkAdaptCard(wrap) } catch (e) {}
+    try { autoContrastCard(wrap) } catch (e) {}
   }
   function hydrateVcpSlots(container) {
     var slots = container.querySelectorAll('.kc-vcp-slot')
@@ -370,10 +392,9 @@
           wrap.setAttribute('data-vcp-card', '1')
           wrap.appendChild(frag)
           proxyExternalImgs(wrap)
-          darkAdaptCard(wrap)
           slot.replaceWith(wrap)
-          autoContrastCard(wrap) // 插入 DOM 后再巡检对比度（需计算样式沿祖先链取背景）
-          ensureVendor().then(function () { window.VCPRender.enhance(wrap) })
+          polishCard(wrap) // 插入 DOM 后再跑（对比度巡检需沿祖先链取计算背景）
+          ensureVendor().then(function () { window.VCPRender.enhance(wrap); polishCard(wrap) }) // enhance 改写样式后补一遍
         } catch (err) {
           if (typeof console !== 'undefined') console.error('[kimi-chat] vcp 卡片渲染失败，降级为源码：', err)
           var pre2 = document.createElement('pre')
@@ -1330,6 +1351,11 @@
       var forced = uiCfg.color_mode === 'dark' || uiCfg.color_mode === 'light' ? uiCfg.color_mode : ''
       if (forced) host.setAttribute('data-kc-scheme', forced)
       else host.removeAttribute('data-kc-scheme')
+      // 配色/风格切换后，对已渲染卡片重跑适配（深色色板、红边剥离、对比度）
+      try {
+        var cards = els.msgs.querySelectorAll('.vcp-card')
+        for (var ci = 0; ci < cards.length; ci++) polishCard(cards[ci])
+      } catch (e) {}
       var showRail = uiCfg.right_rail && !railHidden
       if (els.rightrail) els.rightrail.classList.toggle('kc-rr-off', !showRail)
       var t = root.querySelector('.kc-rail-toggle')
