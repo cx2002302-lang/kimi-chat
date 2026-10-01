@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.9.3'
+  var VERSION = '0.9.4'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
