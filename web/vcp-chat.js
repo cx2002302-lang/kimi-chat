@@ -12,7 +12,7 @@
 ;(function () {
   'use strict'
 
-  var VERSION = '0.9.2'
+  var VERSION = '0.9.3'
   // 服务地址跟随页面主机：本机浏览器→127.0.0.1，远程浏览器→服务器 IP（服务端有 token 认证）
   var SVC_DIRECT = location.protocol + '//' + location.hostname + ':58931'
   var SVC = SVC_DIRECT
@@ -278,6 +278,57 @@
     if (de.classList && de.classList.contains('dark')) return 'dark'
     try { return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' } catch (e) { return 'light' }
   }
+  // ---------- 卡片自动对比度巡检：浅底白字/深底深字这类无障碍事故直接纠正 ----------
+  function rgbOf(color) {
+    var m = /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/.exec(String(color))
+    return m ? { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] } : null
+  }
+  function lumOf(c) {
+    var f = function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
+    return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b)
+  }
+  function contrastOf(fg, bg) {
+    var a = lumOf(fg), b = lumOf(bg)
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+  }
+  // 沿祖先链找最近的非透明背景色（渐变/背景图视作未知 → 返回 null，不强行修）
+  function effectiveBg(el, stopEl) {
+    var cur = el
+    while (cur && cur !== stopEl) {
+      var c = rgbOf(getComputedStyle(cur).backgroundColor)
+      if (c && c.a > 0.75) return c
+      cur = cur.parentElement
+    }
+    // 到卡片根仍是透明 → 用宿主模块底色兜底
+    var hostC = rgbOf(getComputedStyle(document.getElementById('kc-module-host').shadowRoot.querySelector('.kc-module')).backgroundColor)
+    return hostC && hostC.a > 0 ? hostC : { r: 255, g: 255, b: 255, a: 1 }
+  }
+  function autoContrastCard(wrap) {
+    var rootEl = wrap.querySelector('[id^="vcp-msg-"]') || wrap.firstElementChild
+    if (!rootEl) return
+    var palText = getComputedStyle(rootEl).getPropertyValue('--vcp-text-primary').trim()
+    var all = [rootEl].concat([].slice.call(rootEl.querySelectorAll('*')))
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i]
+      if (el.tagName === 'STYLE' || el.tagName === 'SCRIPT') continue
+      var hasText = false
+      for (var n = el.firstChild; n; n = n.nextSibling) {
+        if (n.nodeType === 3 && n.nodeValue.trim()) { hasText = true; break }
+      }
+      if (!hasText) continue
+      var cs = getComputedStyle(el)
+      var fg = rgbOf(cs.color)
+      if (!fg) continue
+      var bg = effectiveBg(el, rootEl)
+      if (!bg) continue
+      if (contrastOf(fg, bg) >= 2.2) continue
+      // 修复色优先取风格色板文字色（对比度达标才用），否则按底色亮度给深/浅
+      var fix = '#1f2937'
+      if (lumOf(bg) <= 0.45) fix = '#f5f6f8'
+      if (palText && rgbOf(palText) && contrastOf(rgbOf(palText), bg) >= 4.5) fix = palText
+      el.style.color = fix
+    }
+  }
   // 深色环境下的卡片适配：模型硬编码的浅色底（白卡）在深色风格下刺眼——
   // 根容器与内联浅色块强制改用当前风格色板（--vcp-*，未选风格时给中性深色兜底）
   function darkAdaptCard(wrap) {
@@ -321,6 +372,7 @@
           proxyExternalImgs(wrap)
           darkAdaptCard(wrap)
           slot.replaceWith(wrap)
+          autoContrastCard(wrap) // 插入 DOM 后再巡检对比度（需计算样式沿祖先链取背景）
           ensureVendor().then(function () { window.VCPRender.enhance(wrap) })
         } catch (err) {
           if (typeof console !== 'undefined') console.error('[kimi-chat] vcp 卡片渲染失败，降级为源码：', err)
