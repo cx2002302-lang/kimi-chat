@@ -24,8 +24,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
+const { spawn } = require('node:child_process')
 
-const VERSION = '0.9.6'
+const VERSION = '0.9.7'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -249,6 +250,34 @@ function loadOAuthToken() {
 }
 function invalidateOAuthCache() { credCache = { at: 0, token: null } }
 
+// ---------- kimi-code 凭证自动续期：access token 15 分钟 TTL，TUI 没开时由服务无头拉起 CLI 刷新 ----------
+let kimiRefreshAt = 0
+let kimiRefreshInFlight = null
+const KIMI_BIN = process.env.KIMI_CODE_BIN || path.join(HOME, 'bin', 'kimi')
+function refreshKimiCredentials(reason) {
+  if (kimiRefreshInFlight) return kimiRefreshInFlight
+  const now = Date.now()
+  if (now - kimiRefreshAt < 4 * 60 * 1000) return Promise.resolve(loadOAuthToken()) // 4 分钟节流
+  kimiRefreshAt = now
+  try { fs.appendFileSync(path.join(STATE_DIR, 'watch.log'), new Date().toISOString() + ' kimi-cli-refresh (' + reason + ')：无头拉起 CLI 刷新登录态\n') } catch {}
+  kimiRefreshInFlight = new Promise(function (resolve) {
+    var done = function (ok) {
+      invalidateOAuthCache()
+      kimiRefreshInFlight = null
+      try { fs.appendFileSync(path.join(STATE_DIR, 'watch.log'), new Date().toISOString() + ' kimi-cli-refresh ' + (ok ? '成功' : '失败') + '\n') } catch {}
+      resolve(loadOAuthToken())
+    }
+    try {
+      var bin = fs.existsSync(KIMI_BIN) ? KIMI_BIN : 'kimi'
+      var out = fs.openSync(path.join(STATE_DIR, 'kimi-refresh.log'), 'a')
+      var p = spawn(bin, ['-p', 'ok', '--output-format', 'text'], { cwd: HOME, stdio: ['ignore', out, out], timeout: 120000 })
+      p.on('exit', function () { done(true) })
+      p.on('error', function () { done(false) })
+    } catch (e) { done(false) }
+  })
+  return kimiRefreshInFlight
+}
+
 /**
  * 解析某个模型 id 的可用后端。
  * 优先级：config.json 的 chat_base_url 覆盖 > CLI 注册表（openai provider 直连 /
@@ -278,9 +307,12 @@ function resolveModelBackend(cfg, modelId) {
     return { base_url: prov.base_url, api_key: prov.api_key || 'none', model: modelName, source: provName, entry, oauth: false, headers: prov.custom_headers || null }
   }
   if (provName === 'managed:kimi-code' || prov.type === 'kimi') {
-    const token = loadOAuthToken()
+    let token = loadOAuthToken()
+    if (!token && kimiRefreshAt === 0) {
+      try { fs.appendFileSync(path.join(STATE_DIR, 'watch.log'), new Date().toISOString() + ' kimi 凭证过期（首次探测）\n') } catch {}
+    }
     if (!token) {
-      return { error: 'kimi-code 订阅凭证不可用（可能已过期，请在 TUI 里随便跑一句让 CLI 刷新登录态），' +
+      return { error: 'kimi-code 订阅凭证不可用（已过期；插件会自动无头拉起 CLI 续期，约 10~90 秒后重试；也可在 TUI 重新登录），' +
         '或在 config.json 设置 chat_base_url/chat_api_key/chat_model' }
     }
     return { base_url: prov.base_url, api_key: token, model: modelName, source: 'kimi-code 订阅', entry, oauth: true }
@@ -465,6 +497,7 @@ async function callChatUpstream(backend, payload, effort) {
   if (up.status === 400 && body.reasoning_effort) up = await attempt(false) // 上游不认识 effort 参数
   if (up.status === 401 && backend.oauth) {
     invalidateOAuthCache()
+    if (!loadOAuthToken()) await refreshKimiCredentials('chat-401') // 令牌过期：无头拉起 CLI 续期
     const token = loadOAuthToken()
     if (token && token !== backend.api_key) {
       backend.api_key = token
@@ -484,6 +517,16 @@ async function handleChat(req, res, id, body) {
 
   // 模型/思考强度：请求体 > 话题设置 > CLI 默认
   const wantModel = String(body.model || topic.model || '')
+  // kimi 订阅令牌过期 → 无头拉起 CLI 自动续期（4 分钟节流），本条请求稍等续期完成
+  try {
+    const reg0 = loadCliRegistry()
+    const id0 = wantModel || reg0.default_model
+    const e0 = reg0.models.find(function (m) { return m.id === id0 }) || null
+    const p0 = e0 ? e0.provider : String(id0 || '').split('/')[0]
+    if ((p0 === 'managed:kimi-code' || (reg0.providers[p0] || {}).type === 'kimi') && !loadOAuthToken()) {
+      await refreshKimiCredentials('chat')
+    }
+  } catch (e) {}
   const backend = resolveModelBackend(cfg, wantModel)
   if (!backend || backend.error) {
     return sendJson(res, 400, { error: (backend && backend.error) || '聊天后端不可用；请在 config.json 设置 chat_base_url/chat_api_key/chat_model' })
@@ -821,6 +864,9 @@ async function route(req, res) {
   if (p === '/api/health') {
     const cfg = loadConfig()
     const backend = resolveChatBackend(cfg)
+    if (backend && backend.error && /订阅/.test(backend.error)) {
+      refreshKimiCredentials('health') // 后台触发续期（不阻塞健康检查；4 分钟节流）
+    }
     return sendJson(res, 200, {
       ok: true,
       version: VERSION,
