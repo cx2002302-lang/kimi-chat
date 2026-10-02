@@ -26,7 +26,7 @@ const os = require('node:os')
 const crypto = require('node:crypto')
 const { spawn } = require('node:child_process')
 
-const VERSION = '0.9.7'
+const VERSION = '0.9.8'
 const HOME = process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code')
 const STATE_DIR = path.join(HOME, 'kimi-chat')
 const TOPICS_DIR = path.join(STATE_DIR, 'topics')
@@ -270,6 +270,7 @@ function refreshKimiCredentials(reason) {
     try {
       var bin = fs.existsSync(KIMI_BIN) ? KIMI_BIN : 'kimi'
       var out = fs.openSync(path.join(STATE_DIR, 'kimi-refresh.log'), 'a')
+      // 续期只能随一次真实请求完成（auth 服务尚不支持独立 refresh）：用最短的 -p 把消耗压到最小
       var p = spawn(bin, ['-p', 'ok', '--output-format', 'text'], { cwd: HOME, stdio: ['ignore', out, out], timeout: 120000 })
       p.on('exit', function () { done(true) })
       p.on('error', function () { done(false) })
